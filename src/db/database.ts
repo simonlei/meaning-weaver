@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { seedIfNeeded } from './seedData';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -45,6 +46,9 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (currentVersion < MIGRATIONS.length) {
     await db.execAsync(`PRAGMA user_version = ${MIGRATIONS.length}`);
   }
+
+  // Seed example data on first launch
+  await seedIfNeeded(db);
 
   return db;
 }
