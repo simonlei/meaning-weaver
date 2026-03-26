@@ -9,6 +9,10 @@ dist/
 *.orig.*
 web-build/
 
+# Expo prebuild generated native directories
+android/
+ios/
+
 # macOS
 .DS_Store
 

@@ -16,6 +16,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.simonlei.meaningweaver",
       "adaptiveIcon": {
         "backgroundColor": "#F5F0EB",
         "foregroundImage": "./assets/android-icon-foreground.png",
