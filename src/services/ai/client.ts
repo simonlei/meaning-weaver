@@ -1,11 +1,11 @@
 import { ReportContent, ReportContentSchema } from '../../db/schema';
 import { Result, Ok, Err } from '../../lib/result';
 
-// MVP: hardcoded API key (replace with your own)
-// TODO: Move to proxy server before any public release
-const CLAUDE_API_KEY = 'YOUR_API_KEY_HERE';
-const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-sonnet-4-20250514';
+// 腾讯云混元大模型（OpenAI 兼容接口）
+// 获取 API Key: https://console.cloud.tencent.com/hunyuan → API 密钥管理
+const API_KEY = 'YOUR_HUNYUAN_API_KEY';
+const API_URL = 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions';
+const MODEL = 'hunyuan-turbos-latest'; // 调试可改为 'hunyuan-lite'（免费）
 
 export type AIError =
   | { kind: 'network'; message: string }
@@ -18,36 +18,34 @@ export async function callClaude(
   systemPrompt: string,
   userPrompt: string
 ): Promise<Result<ReportContent, AIError>> {
-  if (CLAUDE_API_KEY === 'YOUR_API_KEY_HERE') {
+  if (API_KEY === 'YOUR_HUNYUAN_API_KEY') {
     return Err({ kind: 'no_api_key' });
   }
 
   try {
-    const response = await fetch(CLAUDE_API_URL, {
+    const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${API_KEY}`,
       },
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.7,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
       }),
     });
 
     if (response.status === 429) {
-      const retryAfter = response.headers.get('retry-after');
-      return Err({
-        kind: 'rate_limit',
-        retryAfterMs: retryAfter ? parseInt(retryAfter) * 1000 : 60000,
-      });
+      return Err({ kind: 'rate_limit', retryAfterMs: 60000 });
     }
 
     if (response.status === 401 || response.status === 403) {
-      return Err({ kind: 'auth', message: 'Invalid API key' });
+      return Err({ kind: 'auth', message: 'API Key 无效，请检查腾讯云混元密钥' });
     }
 
     if (!response.ok) {
@@ -55,7 +53,8 @@ export async function callClaude(
     }
 
     const data = await response.json();
-    const text = data.content?.[0]?.text ?? '';
+    // OpenAI 兼容格式
+    const text = data.choices?.[0]?.message?.content ?? '';
 
     // Extract JSON from response (handle potential markdown code blocks)
     let jsonStr = text;
