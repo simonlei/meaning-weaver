@@ -2,9 +2,13 @@ import { ReportContent, ReportContentSchema } from '../../db/schema';
 import { Result, Ok, Err } from '../../lib/result';
 
 // 腾讯云混元大模型（OpenAI 兼容接口）
-// 获取 API Key: https://console.cloud.tencent.com/hunyuan → API 密钥管理
-const API_KEY = 'YOUR_HUNYUAN_API_KEY';
-const API_URL = 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions';
+// Web 端通过本地代理转发（解决 CORS），原生端直连
+import { Platform } from 'react-native';
+
+const API_KEY = process.env.EXPO_PUBLIC_HUNYUAN_API_KEY || 'YOUR_HUNYUAN_API_KEY';
+const HUNYUAN_URL = 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions';
+const PROXY_URL = `${typeof window !== 'undefined' ? window.location.protocol + '//' + window.location.hostname : 'http://localhost'}:3001/v1/chat/completions`;
+const API_URL = Platform.OS === 'web' ? PROXY_URL : HUNYUAN_URL;
 const MODEL = 'hunyuan-turbos-latest'; // 调试可改为 'hunyuan-lite'（免费）
 
 export type AIError =
@@ -18,7 +22,7 @@ export async function callClaude(
   systemPrompt: string,
   userPrompt: string
 ): Promise<Result<ReportContent, AIError>> {
-  if (API_KEY === 'YOUR_HUNYUAN_API_KEY') {
+  if (!API_KEY || API_KEY.startsWith('YOUR_')) {
     return Err({ kind: 'no_api_key' });
   }
 
@@ -53,6 +57,7 @@ export async function callClaude(
     }
 
     const data = await response.json();
+    console.log('[AI] Raw response:', JSON.stringify(data).slice(0, 500));
     // OpenAI 兼容格式
     const text = data.choices?.[0]?.message?.content ?? '';
 

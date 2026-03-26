@@ -1,15 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDatabase } from '../../hooks/useDatabase';
-import { getAllReports } from '../../db/queries/reports';
 import { Report, ReportContent } from '../../db/schema';
 import { generateWeeklyReport } from '../../services/ai/reportGenerator';
 import { ReportView } from './ReportView';
@@ -59,42 +57,43 @@ function ReportCard({
 }
 
 export function ReportListScreen() {
-  const { db } = useDatabase();
+  const { repo } = useDatabase();
   const queryClient = useQueryClient();
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   const { data: reports, isLoading } = useQuery({
     queryKey: ['reports'],
-    queryFn: () => getAllReports(db!),
-    enabled: !!db,
+    queryFn: () => repo!.getAllReports(),
+    enabled: !!repo,
   });
 
   const generateMutation = useMutation({
-    mutationFn: () => generateWeeklyReport(db!),
+    mutationFn: () => generateWeeklyReport(repo!),
     onSuccess: (result) => {
+      console.log('[Report] Generation result:', result);
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       if (result.ok) {
-        Alert.alert('✨ 周报已生成', '点击查看你的生活洞察');
+        window?.alert?.('✨ 周报已生成！点击查看你的生活洞察');
+      } else {
+        console.warn('[Report] Generation returned error:', result.error);
+        // fallback 也会保存，仍然刷新列表
+        window?.alert?.('周报已生成（使用了本地模板）');
       }
     },
-    onError: () => {
-      Alert.alert('生成失败', '请检查网络连接后重试');
+    onError: (err) => {
+      console.error('[Report] Mutation error:', err);
+      window?.alert?.('生成失败，请检查网络连接后重试');
     },
   });
 
   const handleGenerate = () => {
-    if (!db) return;
-    Alert.alert(
-      '生成周报',
-      '将分析本周的碎片并生成生活洞察报告',
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '生成',
-          onPress: () => generateMutation.mutate(),
-        },
-      ]
-    );
+    if (!repo) return;
+    const confirmed = window?.confirm
+      ? window.confirm('将分析本周的碎片并生成生活洞察报告，确定？')
+      : true;
+    if (confirmed) {
+      generateMutation.mutate();
+    }
   };
 
   if (selectedReport) {
@@ -132,7 +131,7 @@ export function ReportListScreen() {
           generateMutation.isPending && styles.generateButtonDisabled,
         ]}
         onPress={handleGenerate}
-        disabled={generateMutation.isPending || !db}
+        disabled={generateMutation.isPending || !repo}
       >
         {generateMutation.isPending ? (
           <View style={styles.generatingRow}>

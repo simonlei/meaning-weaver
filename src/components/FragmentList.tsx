@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { Fragment } from '../db/schema';
 import { useRecentFragments, useDeleteFragment } from '../hooks/useFragments';
 
@@ -31,14 +31,12 @@ function FragmentItem({ fragment }: { fragment: Fragment }) {
   const deleteFragment = useDeleteFragment();
 
   const handleLongPress = () => {
-    Alert.alert('删除碎片', '确定要删除这条记录吗？', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '删除',
-        style: 'destructive',
-        onPress: () => deleteFragment.mutate(fragment.id),
-      },
-    ]);
+    const confirmed = window?.confirm
+      ? window.confirm('确定要删除这条记录吗？')
+      : true;
+    if (confirmed) {
+      deleteFragment.mutate(fragment.id);
+    }
   };
 
   return (

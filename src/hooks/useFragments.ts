@@ -1,12 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDatabase } from './useDatabase';
-import {
-  insertFragment,
-  getRecentFragments,
-  getCurrentWeekFragments,
-  deleteFragment,
-  getFragmentCount,
-} from '../db/queries/fragments';
 
 export const fragmentKeys = {
   all: ['fragments'] as const,
@@ -16,37 +9,37 @@ export const fragmentKeys = {
 };
 
 export function useRecentFragments() {
-  const { db } = useDatabase();
+  const { repo } = useDatabase();
   return useQuery({
     queryKey: fragmentKeys.list(),
-    queryFn: () => getRecentFragments(db!, 100),
-    enabled: !!db,
+    queryFn: () => repo!.getRecentFragments(100),
+    enabled: !!repo,
   });
 }
 
 export function useCurrentWeekFragments() {
-  const { db } = useDatabase();
+  const { repo } = useDatabase();
   return useQuery({
     queryKey: fragmentKeys.currentWeek(),
-    queryFn: () => getCurrentWeekFragments(db!),
-    enabled: !!db,
+    queryFn: () => repo!.getCurrentWeekFragments(),
+    enabled: !!repo,
   });
 }
 
 export function useFragmentCount() {
-  const { db } = useDatabase();
+  const { repo } = useDatabase();
   return useQuery({
     queryKey: fragmentKeys.count(),
-    queryFn: () => getFragmentCount(db!),
-    enabled: !!db,
+    queryFn: () => repo!.getFragmentCount(),
+    enabled: !!repo,
   });
 }
 
 export function useCreateFragment() {
-  const { db } = useDatabase();
+  const { repo } = useDatabase();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) => insertFragment(db!, content),
+    mutationFn: (content: string) => repo!.insertFragment(content),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fragmentKeys.all });
     },
@@ -54,10 +47,10 @@ export function useCreateFragment() {
 }
 
 export function useDeleteFragment() {
-  const { db } = useDatabase();
+  const { repo } = useDatabase();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => deleteFragment(db!, id),
+    mutationFn: (id: string) => repo!.deleteFragment(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fragmentKeys.all });
     },

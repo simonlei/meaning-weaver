@@ -1,7 +1,5 @@
-import * as SQLite from 'expo-sqlite';
 import { Fragment, ReportContent, computeWeekKey } from '../../db/schema';
-import { getFragmentsByWeek } from '../../db/queries/fragments';
-import { insertReport, getLatestReport, parseReportContent } from '../../db/queries/reports';
+import { Repository } from '../../db/repository';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts';
 import { callClaude, AIError } from './client';
 import { Result, Ok, Err } from '../../lib/result';
@@ -45,11 +43,11 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
 }
 
 export async function generateWeeklyReport(
-  db: SQLite.SQLiteDatabase,
+  repo: Repository,
   weekKey?: string
 ): Promise<Result<ReportContent, AIError | { kind: 'no_fragments' }>> {
   const targetWeek = weekKey ?? computeWeekKey(Date.now());
-  const fragments = await getFragmentsByWeek(db, targetWeek);
+  const fragments = await repo.getFragmentsByWeek(targetWeek);
 
   if (fragments.length === 0) {
     return Err({ kind: 'no_fragments' as const });
@@ -57,12 +55,12 @@ export async function generateWeeklyReport(
 
   // Get previous report for context
   let previousSummary: string | undefined;
-  const latestReport = await getLatestReport(db);
+  const latestReport = await repo.getLatestReport();
   if (latestReport) {
-    const prevContent = parseReportContent(latestReport);
-    if (prevContent) {
+    try {
+      const prevContent = JSON.parse(latestReport.content) as ReportContent;
       previousSummary = `**快照**：${prevContent.snapshot.summary}\n**情绪色彩**：${prevContent.snapshot.mood_palette.join('、')}`;
-    }
+    } catch {}
   }
 
   const userPrompt = buildUserPrompt(fragments, previousSummary);
@@ -73,14 +71,11 @@ export async function generateWeeklyReport(
   if (result.ok) {
     reportContent = result.value;
   } else {
-    // Fallback: generate a local template report
     console.warn('AI generation failed, using fallback:', result.error);
     reportContent = createFallbackReport(fragments);
   }
 
-  // Save to database
-  await insertReport(
-    db,
+  await repo.insertReport(
     targetWeek,
     reportContent,
     fragments.map((f) => f.id),

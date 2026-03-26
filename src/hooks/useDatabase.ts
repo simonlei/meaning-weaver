@@ -1,29 +1,45 @@
 import { useEffect, useState } from 'react';
-import * as SQLite from 'expo-sqlite';
-import { getDatabase } from '../db/database';
+import { Repository, getRepository } from '../db/repository';
+
+let cachedRepo: Repository | null = null;
+let repoPromise: Promise<Repository> | null = null;
 
 export function useDatabase() {
-  const [db, setDb] = useState<SQLite.SQLiteDatabase | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [repo, setRepo] = useState<Repository | null>(cachedRepo);
+  const [loading, setLoading] = useState(!cachedRepo);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    if (cachedRepo) {
+      setRepo(cachedRepo);
+      setLoading(false);
+      return;
+    }
+
     let mounted = true;
-    getDatabase()
-      .then((database) => {
+    if (!repoPromise) {
+      repoPromise = getRepository();
+    }
+
+    repoPromise
+      .then((r) => {
+        cachedRepo = r;
         if (mounted) {
-          setDb(database);
+          setRepo(r);
           setLoading(false);
         }
       })
       .catch((err) => {
+        console.error('[useDatabase] Failed:', err);
+        repoPromise = null;
         if (mounted) {
-          setError(err);
+          setError(err instanceof Error ? err : new Error(String(err)));
           setLoading(false);
         }
       });
+
     return () => { mounted = false; };
   }, []);
 
-  return { db, loading, error };
+  return { repo, loading, error };
 }
