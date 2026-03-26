@@ -34,11 +34,25 @@ jobs:
       - name: Expo prebuild (generate android project)
         run: npx expo prebuild --platform android --no-install
 
+      - name: Optimize build config
+        run: |
+          # Only build arm64-v8a (covers 95%+ modern devices, cuts APK size ~75%)
+          sed -i '/defaultConfig {/a \        ndk { abiFilters "arm64-v8a" }' android/app/build.gradle
+          # Enable ProGuard/R8 code shrinking for release
+          sed -i 's/isMinifyEnabled = false/isMinifyEnabled = true/' android/app/build.gradle
+          sed -i 's/isShrinkResources = false/isShrinkResources = true/' android/app/build.gradle
+
       - name: Build APK with Gradle
         working-directory: android
         run: ./gradlew assembleRelease
 
+      - name: Rename APK with version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          mv android/app/build/outputs/apk/release/app-release.apk \
+             android/app/build/outputs/apk/release/meaning-weaver-${TAG}.apk
+
       - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/release/*.apk
+          files: android/app/build/outputs/apk/release/meaning-weaver-*.apk
