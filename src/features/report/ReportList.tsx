@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { useDatabase } from '../../hooks/useDatabase';
 import { Report, ReportContent } from '../../db/schema';
 import { generateWeeklyReport } from '../../services/ai/reportGenerator';
@@ -59,6 +60,7 @@ function ReportCard({
 export function ReportListScreen() {
   const { repo } = useDatabase();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   const { data: reports, isLoading } = useQuery({
@@ -76,8 +78,13 @@ export function ReportListScreen() {
         window?.alert?.('✨ 周报已生成！点击查看你的生活洞察');
       } else {
         console.warn('[Report] Generation returned error:', result.error);
-        // fallback 也会保存，仍然刷新列表
-        window?.alert?.('周报已生成（使用了本地模板）');
+        if (!result.ok && result.error.kind === 'no_api_key') {
+          // 跳转到设置页让用户配置 API Key
+          router.push('/(tabs)/settings');
+        } else {
+          // 其他错误时使用本地模板降级（fallback 已在 reportGenerator 中处理）
+          window?.alert?.('周报已生成（使用了本地模板）');
+        }
       }
     },
     onError: (err) => {
