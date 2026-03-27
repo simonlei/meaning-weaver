@@ -1,7 +1,7 @@
 ---
 title: "feat: 用户自定义 Hunyuan API Key 配置项"
 type: feat
-status: active
+status: completed
 date: 2026-03-27
 ---
 
@@ -297,35 +297,35 @@ router.push('/(tabs)/settings');
 ## Acceptance Criteria
 
 ### Repository 层
-- [ ] `WebRepository.getApiKey()` 初始返回 `null`
-- [ ] `WebRepository.setApiKey(key)` 保存后 `getApiKey()` 返回该 key
-- [ ] `WebRepository.setApiKey('')` 等同清空
-- [ ] `SQLiteRepository` 同上三条，通过内存 mock 测试
-- [ ] SQLite migration `user_version` 从 1 升至 2，`settings` 表正确创建
+- [x] `WebRepository.getApiKey()` 初始返回 `null`
+- [x] `WebRepository.setApiKey(key)` 保存后 `getApiKey()` 返回该 key
+- [x] `WebRepository.setApiKey('')` 等同清空
+- [x] `SQLiteRepository` 同上三条，通过内存 mock 测试
+- [x] SQLite migration `user_version` 从 1 升至 2，`settings` 表正确创建
 
 ### AI Client 层
-- [ ] `callClaude(null, ...)` 返回 `{ kind: 'no_api_key' }`
-- [ ] `callClaude('YOUR_HUNYUAN_API_KEY', ...)` 返回 `{ kind: 'no_api_key' }`
-- [ ] 传入有效 key 时正常发起请求（mock fetch 验证 Authorization header 包含该 key）
+- [x] `callClaude(null, ...)` 返回 `{ kind: 'no_api_key' }`
+- [x] `callClaude('YOUR_HUNYUAN_API_KEY', ...)` 返回 `{ kind: 'no_api_key' }`
+- [x] 传入有效 key 时正常发起请求（mock fetch 验证 Authorization header 包含该 key）
 
 ### Hook 层
-- [ ] `useApiKey()` 返回 repo 中存储的 key
-- [ ] `useSaveApiKey().mutate(key)` 调用 `repo.setApiKey(key)` 并使缓存失效
+- [x] `useApiKey()` 返回 repo 中存储的 key
+- [x] `useSaveApiKey().mutate(key)` 调用 `repo.setApiKey(key)` 并使缓存失效
 
 ### Settings UI
-- [ ] 渲染时展示脱敏的已保存 key（若有）
-- [ ] 输入新 key + 点击「保存」 → `mutation` 被调用
-- [ ] 点击「清除」 → `setApiKey('')` 被调用
-- [ ] TextInput 使用 `secureTextEntry` 遮蔽输入
+- [x] 渲染时展示脱敏的已保存 key（若有）
+- [x] 输入新 key + 点击「保存」 → `mutation` 被调用
+- [x] 点击「清除」 → `setApiKey('')` 被调用
+- [x] TextInput 使用 `secureTextEntry` 遮蔽输入
 
 ### 集成行为
-- [ ] 无 key 时生成周报 → 弹出/跳转至设置页
-- [ ] 设置 key 后再生成周报 → 使用该 key 调用 API（无 `no_api_key` 降级）
-- [ ] Settings Tab 显示在底部导航栏（⚙️ 图标）
+- [x] 无 key 时生成周报 → 弹出/跳转至设置页
+- [x] 设置 key 后再生成周报 → 使用该 key 调用 API（无 `no_api_key` 降级）
+- [x] Settings Tab 显示在底部导航栏（⚙️ 图标）
 
 ### TDD 流程
-- [ ] **每个模块的测试先于实现提交**（commit 历史可验证）
-- [ ] 所有测试 `npm test` 全部通过，无跳过
+- [x] **每个模块的测试先于实现提交**（commit 历史可验证）
+- [x] 所有测试 `npm test` 全部通过，无跳过
 
 ## Dependencies & Risks
 
