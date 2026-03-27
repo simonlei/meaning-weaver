@@ -1,9 +1,9 @@
 import { ReportContent, ReportContentSchema } from '../../db/schema';
 import { Result, Ok, Err } from '../../lib/result';
+import { Platform } from 'react-native';
 
 // 腾讯云混元大模型（OpenAI 兼容接口）
 // Web 端通过本地代理转发（解决 CORS），原生端直连
-import { Platform } from 'react-native';
 
 const HUNYUAN_URL = 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions';
 
@@ -14,7 +14,12 @@ function getApiUrl(): string {
   return HUNYUAN_URL;
 }
 
-const MODEL = 'hunyuan-turbos-latest'; // 调试可改为 'hunyuan-lite'（免费）
+export const TEXT_MODEL = 'hunyuan-turbos-latest';         // 文字专用，调试可改为 'hunyuan-lite'（免费）
+export const VISION_MODEL = 'hunyuan-vision-1.5-instruct'; // 有照片碎片时使用
+
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
 
 export type AIError =
   | { kind: 'network'; message: string }
@@ -26,7 +31,8 @@ export type AIError =
 export async function callHunyuan(
   apiKey: string | null,
   systemPrompt: string,
-  userPrompt: string
+  userContent: string | ContentPart[],
+  model: string = TEXT_MODEL,
 ): Promise<Result<ReportContent, AIError>> {
   if (!apiKey || apiKey.startsWith('YOUR_')) {
     return Err({ kind: 'no_api_key' });
@@ -42,12 +48,12 @@ export async function callHunyuan(
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         max_tokens: 4096,
         temperature: 0.7,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'user', content: userContent },
         ],
       }),
     });

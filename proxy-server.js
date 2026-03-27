@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' })); // 提升上限以支持 base64 图片传输（vision 模型）
 
 // CORS headers
 app.use((req, res, next) => {

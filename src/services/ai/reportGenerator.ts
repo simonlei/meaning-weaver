@@ -1,14 +1,21 @@
 import { Fragment, ReportContent, computeWeekKey } from '../../db/schema';
 import { Repository } from '../../db/repository';
-import { SYSTEM_PROMPT, buildUserPrompt } from './prompts';
-import { callHunyuan, AIError } from './client';
+import { SYSTEM_PROMPT, VISION_SYSTEM_PROMPT, buildUserPrompt, buildVisionUserContent } from './prompts';
+import { callHunyuan, ContentPart, TEXT_MODEL, VISION_MODEL, AIError } from './client';
 import { Result, Ok, Err } from '../../lib/result';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
+
+const MAX_PHOTOS_PER_REPORT = 5;
 
 function createFallbackReport(fragments: Fragment[]): ReportContent {
   const days = new Set(fragments.map((f) => {
     const d = new Date(f.created_at);
     return `${d.getMonth() + 1}月${d.getDate()}日`;
   }));
+
+  // 空 content 时（照片专用碎片）使用占位文本
+  const safeContent = (content: string) => content.trim() || '[照片]';
 
   return {
     version: 1,
@@ -21,13 +28,13 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
       recurring_themes: [
         {
           theme: '记录本身',
-          evidence: [fragments[0]?.content.slice(0, 50) ?? ''],
+          evidence: [safeContent(fragments[0]?.content ?? '').slice(0, 50)],
           insight: '你选择记录，这本身就是一种关注自己的方式。',
         },
       ],
     },
     notable_moments: fragments.slice(0, 2).map((f) => ({
-      moment: f.content.slice(0, 100),
+      moment: safeContent(f.content).slice(0, 100),
       why_it_matters: '每一个被记录下来的瞬间，都值得被看见。',
     })),
     growth_trajectory: {
@@ -40,6 +47,26 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
       affirmation: '你的每一条记录，都在编织属于你的故事。',
     },
   };
+}
+
+/**
+ * Compress a photo and return its base64 data URI.
+ * Returns null if compression or reading fails — caller skips the image.
+ */
+async function compressAndReadBase64(photoUri: string): Promise<string | null> {
+  try {
+    const compressed = await ImageManipulator.manipulateAsync(
+      photoUri,
+      [{ resize: { width: 1280 } }],
+      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return `data:image/jpeg;base64,${base64}`;
+  } catch {
+    return null;
+  }
 }
 
 export async function generateWeeklyReport(
@@ -63,9 +90,44 @@ export async function generateWeeklyReport(
     } catch {}
   }
 
-  const userPrompt = buildUserPrompt(fragments, previousSummary);
   const apiKey = await repo.getApiKey();
-  const result = await callHunyuan(apiKey, SYSTEM_PROMPT, userPrompt);
+
+  // Determine if any fragments have photos
+  const photoFragments = fragments
+    .filter((f) => f.photo_uri != null)
+    .sort((a, b) => b.created_at - a.created_at); // newest first for the 5-limit
+  const hasPhotos = photoFragments.length > 0;
+
+  let userContent: string | ContentPart[];
+  let model: string;
+  let systemPrompt: string;
+
+  if (!hasPhotos) {
+    // Text-only path: cheaper model
+    userContent = buildUserPrompt(fragments, previousSummary);
+    model = TEXT_MODEL;
+    systemPrompt = SYSTEM_PROMPT;
+  } else {
+    // Vision path: compress top-N photos and build multimodal content
+    model = VISION_MODEL;
+    systemPrompt = VISION_SYSTEM_PROMPT;
+
+    // Only include base64 for up to MAX_PHOTOS_PER_REPORT photos (by newest)
+    const photoUrisForVision = photoFragments
+      .slice(0, MAX_PHOTOS_PER_REPORT)
+      .map((f) => f.photo_uri!);
+
+    // Compress and read base64 for eligible photos
+    const base64Map = new Map<string, string>();
+    for (const uri of photoUrisForVision) {
+      const b64 = await compressAndReadBase64(uri);
+      if (b64) base64Map.set(uri, b64);
+    }
+
+    userContent = buildVisionUserContent(fragments, base64Map, previousSummary);
+  }
+
+  const result = await callHunyuan(apiKey, systemPrompt, userContent, model);
 
   // no_api_key 直接冒泡，不降级也不存报告，让调用方（UI）处理跳转逻辑
   if (!result.ok && result.error.kind === 'no_api_key') {
@@ -85,7 +147,7 @@ export async function generateWeeklyReport(
     targetWeek,
     reportContent,
     fragments.map((f) => f.id),
-    result.ok ? 'hunyuan-turbos-latest' : 'local-fallback'
+    result.ok ? model : 'local-fallback'
   );
 
   return Ok(reportContent);

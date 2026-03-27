@@ -13,9 +13,13 @@
       "backgroundColor": "#F5F0EB"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "需要访问相册，以便将照片附加到你的碎片记录中。"
+      }
     },
     "android": {
+      "permissions": ["READ_MEDIA_IMAGES"],
       "package": "com.simonlei.meaningweaver",
       "adaptiveIcon": {
         "backgroundColor": "#F5F0EB",
@@ -29,7 +33,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "需要访问相册，以便将照片附加到你的碎片记录中。"
+        }
+      ]
     ]
   }
 }
