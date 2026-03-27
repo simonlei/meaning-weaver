@@ -5,10 +5,15 @@ import { Result, Ok, Err } from '../../lib/result';
 // Web 端通过本地代理转发（解决 CORS），原生端直连
 import { Platform } from 'react-native';
 
-const API_KEY = process.env.EXPO_PUBLIC_HUNYUAN_API_KEY || 'YOUR_HUNYUAN_API_KEY';
 const HUNYUAN_URL = 'https://api.hunyuan.cloud.tencent.com/v1/chat/completions';
-const PROXY_URL = `${typeof window !== 'undefined' ? window.location.protocol + '//' + window.location.hostname : 'http://localhost'}:3001/v1/chat/completions`;
-const API_URL = Platform.OS === 'web' ? PROXY_URL : HUNYUAN_URL;
+
+function getApiUrl(): string {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:3001/v1/chat/completions`;
+  }
+  return HUNYUAN_URL;
+}
+
 const MODEL = 'hunyuan-turbos-latest'; // 调试可改为 'hunyuan-lite'（免费）
 
 export type AIError =
@@ -19,19 +24,22 @@ export type AIError =
   | { kind: 'no_api_key' };
 
 export async function callClaude(
+  apiKey: string | null,
   systemPrompt: string,
   userPrompt: string
 ): Promise<Result<ReportContent, AIError>> {
-  if (!API_KEY || API_KEY.startsWith('YOUR_')) {
+  if (!apiKey || apiKey.startsWith('YOUR_')) {
     return Err({ kind: 'no_api_key' });
   }
+
+  const API_URL = getApiUrl();
 
   try {
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: MODEL,
