@@ -40,9 +40,9 @@ describe('Migration v3 — photo_uri 列', () => {
     mockDeleteAsync.mockClear();
   });
 
-  it('migration 后 user_version 应为 3', async () => {
+  it('migration 后 user_version 应为 4', async () => {
     const row = await db.getFirstAsync('PRAGMA user_version');
-    expect(row?.user_version).toBe(3);
+    expect(row?.user_version).toBe(4);
   });
 
   it('fragments 表包含 photo_uri 列', async () => {

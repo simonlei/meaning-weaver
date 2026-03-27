@@ -6,7 +6,7 @@ import * as FileSystem from 'expo-file-system';
 // Abstract interface - works on both web (memory) and native (SQLite)
 export interface Repository {
   // Fragments
-  insertFragment(content: string, photoUri?: string): Promise<Fragment>;
+  insertFragment(content: string, photoUri?: string, audioUri?: string): Promise<Fragment>;
   getRecentFragments(limit: number): Promise<Fragment[]>;
   getFragmentsByWeek(weekKey: string): Promise<Fragment[]>;
   getCurrentWeekFragments(): Promise<Fragment[]>;
@@ -20,6 +20,8 @@ export interface Repository {
   // Settings
   getApiKey(): Promise<string | null>;
   setApiKey(key: string): Promise<void>;
+  getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null>;
+  setAsrCredentials(secretId: string, secretKey: string): Promise<void>;
 }
 
 // ===== localStorage-backed implementation (Web) =====
@@ -53,7 +55,7 @@ export class WebRepository implements Repository {
     localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(this.reports));
   }
 
-  async insertFragment(content: string, photoUri?: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string, audioUri?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
@@ -61,6 +63,7 @@ export class WebRepository implements Repository {
       created_at: now,
       week_key: computeWeekKey(now),
       photo_uri: photoUri ?? null,
+      audio_uri: audioUri ?? null,
     };
     this.fragments.unshift(fragment);
     this.saveFragments();
@@ -134,6 +137,23 @@ export class WebRepository implements Repository {
       localStorage.setItem(STORAGE_KEY_API_KEY, key);
     }
   }
+
+  async getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null> {
+    const secretId = localStorage.getItem('mw_asr_secret_id');
+    const secretKey = localStorage.getItem('mw_asr_secret_key');
+    if (!secretId || !secretKey) return null;
+    return { secretId, secretKey };
+  }
+
+  async setAsrCredentials(secretId: string, secretKey: string): Promise<void> {
+    if (!secretId || !secretKey) {
+      localStorage.removeItem('mw_asr_secret_id');
+      localStorage.removeItem('mw_asr_secret_key');
+    } else {
+      localStorage.setItem('mw_asr_secret_id', secretId);
+      localStorage.setItem('mw_asr_secret_key', secretKey);
+    }
+  }
 }
 
 // ===== SQLite implementation (Native) =====
@@ -144,7 +164,7 @@ export class SQLiteRepository implements Repository {
     this.db = db;
   }
 
-  async insertFragment(content: string, photoUri?: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string, audioUri?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
@@ -152,10 +172,11 @@ export class SQLiteRepository implements Repository {
       created_at: now,
       week_key: computeWeekKey(now),
       photo_uri: photoUri ?? null,
+      audio_uri: audioUri ?? null,
     };
     await this.db.runAsync(
-      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri) VALUES (?, ?, ?, ?, ?)',
-      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri ?? null]
+      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri, audio_uri) VALUES (?, ?, ?, ?, ?, ?)',
+      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri ?? null, fragment.audio_uri ?? null]
     );
     return fragment;
   }
@@ -179,14 +200,21 @@ export class SQLiteRepository implements Repository {
   }
 
   async deleteFragment(id: string): Promise<void> {
-    // Clean up local photo file before deleting the DB row
-    const row = await this.db.getFirstAsync<{ photo_uri: string | null }>(
-      'SELECT photo_uri FROM fragments WHERE id = ?',
+    // Clean up local photo and audio files before deleting the DB row
+    const row = await this.db.getFirstAsync<{ photo_uri: string | null; audio_uri: string | null }>(
+      'SELECT photo_uri, audio_uri FROM fragments WHERE id = ?',
       [id]
     );
     if (row?.photo_uri) {
       try {
         await FileSystem.deleteAsync(row.photo_uri, { idempotent: true });
+      } catch {
+        // File already gone — ignore
+      }
+    }
+    if (row?.audio_uri) {
+      try {
+        await FileSystem.deleteAsync(row.audio_uri, { idempotent: true });
       } catch {
         // File already gone — ignore
       }
@@ -257,6 +285,34 @@ export class SQLiteRepository implements Repository {
       );
     }
   }
+
+  async getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null> {
+    const sidRow = await this.db.getFirstAsync<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+      ['asr_secret_id']
+    );
+    const keyRow = await this.db.getFirstAsync<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+      ['asr_secret_key']
+    );
+    if (!sidRow?.value || !keyRow?.value) return null;
+    return { secretId: sidRow.value, secretKey: keyRow.value };
+  }
+
+  async setAsrCredentials(secretId: string, secretKey: string): Promise<void> {
+    if (!secretId || !secretKey) {
+      await this.db.runAsync('DELETE FROM settings WHERE key IN (?, ?)', ['asr_secret_id', 'asr_secret_key']);
+    } else {
+      await this.db.runAsync(
+        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+        ['asr_secret_id', secretId]
+      );
+      await this.db.runAsync(
+        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+        ['asr_secret_key', secretKey]
+      );
+    }
+  }
 }
 
 // ===== Migrations (exported for testing) =====
@@ -291,6 +347,11 @@ export async function runMigrations(db: import('expo-sqlite').SQLiteDatabase): P
   if (currentVersion < 3) {
     await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_uri TEXT');
     await db.execAsync('PRAGMA user_version = 3');
+  }
+
+  if (currentVersion < 4) {
+    await db.execAsync('ALTER TABLE fragments ADD COLUMN audio_uri TEXT');
+    await db.execAsync('PRAGMA user_version = 4');
   }
 }
 

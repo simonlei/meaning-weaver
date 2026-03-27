@@ -132,6 +132,9 @@ export function buildUserPrompt(
     for (const f of dayFragments) {
       if (f.content.trim()) {
         prompt += `- ${f.content}\n`;
+      } else if (f.audio_uri) {
+        // Voice fragment with no transcription text — include as placeholder
+        prompt += `- （语音记录）\n`;
       }
     }
     prompt += '\n';
@@ -186,8 +189,11 @@ export function buildVisionUserContent(
         parts.push({ type: 'text', text: textBuffer });
         textBuffer = '';
         parts.push({ type: 'image_url', image_url: { url: base64DataUri } });
+      } else if (!hasText && !base64DataUri && f.audio_uri) {
+        // Voice-only fragment with no transcription and no photo — include as placeholder
+        textBuffer += `- （语音记录）\n`;
       }
-      // else: photo-only fragment with failed/over-limit image and no text → skip
+      // else: empty fragment with no media → skip
     }
     textBuffer += '\n';
   }

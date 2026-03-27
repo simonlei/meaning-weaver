@@ -40,14 +40,15 @@ export function useFragmentCount() {
 export type CreateFragmentInput = {
   content: string;
   photoUri?: string;
+  audioUri?: string;
 };
 
 export function useCreateFragment() {
   const { repo } = useDatabase();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ content, photoUri }: CreateFragmentInput) =>
-      repo!.insertFragment(content, photoUri),
+    mutationFn: ({ content, photoUri, audioUri }: CreateFragmentInput) =>
+      repo!.insertFragment(content, photoUri, audioUri),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fragmentKeys.all });
     },
