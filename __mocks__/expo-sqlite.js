@@ -5,7 +5,8 @@
 
 class InMemoryDatabase {
   constructor() {
-    this._tables = {};
+    this._tables = {};    // tableName -> rows[]
+    this._columns = {};   // tableName -> Set of column names
     this._user_version = 0;
   }
 
@@ -34,6 +35,22 @@ class InMemoryDatabase {
       const name = createMatch[1];
       if (!this._tables[name]) {
         this._tables[name] = [];
+        this._columns[name] = new Set(
+          createMatch[2].split(',').map(col => col.trim().split(/\s+/)[0])
+        );
+      }
+      return;
+    }
+    // ALTER TABLE ... ADD COLUMN
+    const alterMatch = sql.match(/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/i);
+    if (alterMatch) {
+      const tableName = alterMatch[1];
+      const colName = alterMatch[2];
+      if (!this._columns[tableName]) this._columns[tableName] = new Set();
+      this._columns[tableName].add(colName);
+      // Add null to existing rows
+      if (this._tables[tableName]) {
+        this._tables[tableName].forEach(row => { row[colName] = row[colName] ?? null; });
       }
       return;
     }
@@ -51,6 +68,22 @@ class InMemoryDatabase {
   }
 
   async getAllAsync(sql, params = []) {
+    // pragma_table_info query
+    const pragmaInfoMatch = sql.match(/pragma_table_info\s*\(\s*'(\w+)'\s*\)/i);
+    if (pragmaInfoMatch) {
+      const tableName = pragmaInfoMatch[1];
+      const cols = this._columns[tableName] ? [...this._columns[tableName]] : [];
+    // Apply WHERE name = ? or WHERE name = 'value' filter
+      const whereMatch = sql.match(/WHERE\s+(\w+)\s*=\s*(?:\?|'([^']*)')/i);
+      if (whereMatch) {
+        const filterVal = whereMatch[2] !== undefined ? whereMatch[2] : (params[0] ?? null);
+        return cols
+          .filter(name => name === filterVal)
+          .map(name => ({ name }));
+      }
+      return cols.map(name => ({ name }));
+    }
+
     // SELECT from table
     const selectMatch = sql.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)/i);
     if (!selectMatch) return [];
@@ -95,6 +128,7 @@ class InMemoryDatabase {
       const tableName = insertMatch[1];
       const cols = insertMatch[2].split(',').map(c => c.trim());
       if (!this._tables[tableName]) this._tables[tableName] = [];
+      if (!this._columns[tableName]) this._columns[tableName] = new Set(cols);
       const row = {};
       cols.forEach((col, i) => { row[col] = params[i]; });
       // For OR REPLACE: remove existing row with same PRIMARY KEY (first col)
