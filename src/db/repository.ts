@@ -1,11 +1,12 @@
 import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 import { Fragment, Report, ReportContent, computeWeekKey } from './schema';
+import * as FileSystem from 'expo-file-system';
 
 // Abstract interface - works on both web (memory) and native (SQLite)
 export interface Repository {
   // Fragments
-  insertFragment(content: string): Promise<Fragment>;
+  insertFragment(content: string, photoUri?: string): Promise<Fragment>;
   getRecentFragments(limit: number): Promise<Fragment[]>;
   getFragmentsByWeek(weekKey: string): Promise<Fragment[]>;
   getCurrentWeekFragments(): Promise<Fragment[]>;
@@ -52,13 +53,14 @@ export class WebRepository implements Repository {
     localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(this.reports));
   }
 
-  async insertFragment(content: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
       content: content.trim(),
       created_at: now,
       week_key: computeWeekKey(now),
+      photo_uri: photoUri ?? null,
     };
     this.fragments.unshift(fragment);
     this.saveFragments();
@@ -82,6 +84,7 @@ export class WebRepository implements Repository {
   }
 
   async deleteFragment(id: string): Promise<void> {
+    // Web platform: no local file system, skip file cleanup
     this.fragments = this.fragments.filter((f) => f.id !== id);
     this.saveFragments();
   }
@@ -141,17 +144,18 @@ export class SQLiteRepository implements Repository {
     this.db = db;
   }
 
-  async insertFragment(content: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
       content: content.trim(),
       created_at: now,
       week_key: computeWeekKey(now),
+      photo_uri: photoUri ?? null,
     };
     await this.db.runAsync(
-      'INSERT INTO fragments (id, content, created_at, week_key) VALUES (?, ?, ?, ?)',
-      [fragment.id, fragment.content, fragment.created_at, fragment.week_key]
+      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri) VALUES (?, ?, ?, ?, ?)',
+      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri ?? null]
     );
     return fragment;
   }
@@ -175,6 +179,18 @@ export class SQLiteRepository implements Repository {
   }
 
   async deleteFragment(id: string): Promise<void> {
+    // Clean up local photo file before deleting the DB row
+    const row = await this.db.getFirstAsync<{ photo_uri: string | null }>(
+      'SELECT photo_uri FROM fragments WHERE id = ?',
+      [id]
+    );
+    if (row?.photo_uri) {
+      try {
+        await FileSystem.deleteAsync(row.photo_uri, { idempotent: true });
+      } catch {
+        // File already gone — ignore
+      }
+    }
     await this.db.runAsync('DELETE FROM fragments WHERE id = ?', [id]);
   }
 
@@ -270,6 +286,11 @@ export async function runMigrations(db: import('expo-sqlite').SQLiteDatabase): P
       value TEXT NOT NULL
     );`);
     await db.execAsync('PRAGMA user_version = 2');
+  }
+
+  if (currentVersion < 3) {
+    await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_uri TEXT');
+    await db.execAsync('PRAGMA user_version = 3');
   }
 }
 

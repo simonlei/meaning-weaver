@@ -100,7 +100,7 @@ describe('SQLiteRepository - API Key', () => {
 
 // --- getRepository() migration version test ---
 describe('SQLite migration user_version', () => {
-  it('migration 后 user_version 应为 2', async () => {
+  it('migration 后 user_version 应为 3', async () => {
     jest.resetModules();
     jest.mock('react-native', () => ({ Platform: { OS: 'native' } }));
     jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
@@ -111,6 +111,6 @@ describe('SQLite migration user_version', () => {
     await mod.runMigrations(db);
 
     const row = await db.getFirstAsync('PRAGMA user_version');
-    expect(row?.user_version).toBe(2);
+    expect(row?.user_version).toBe(3);
   });
 });
