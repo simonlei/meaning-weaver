@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDatabase } from './useDatabase';
+import { Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system';
 
 export const fragmentKeys = {
   all: ['fragments'] as const,
@@ -35,11 +37,17 @@ export function useFragmentCount() {
   });
 }
 
+export type CreateFragmentInput = {
+  content: string;
+  photoUri?: string;
+};
+
 export function useCreateFragment() {
   const { repo } = useDatabase();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) => repo!.insertFragment(content),
+    mutationFn: ({ content, photoUri }: CreateFragmentInput) =>
+      repo!.insertFragment(content, photoUri),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fragmentKeys.all });
     },

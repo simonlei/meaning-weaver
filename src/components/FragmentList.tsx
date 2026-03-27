@@ -1,5 +1,13 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  Alert,
+} from 'react-native';
 import { Fragment } from '../db/schema';
 import { useRecentFragments, useDeleteFragment } from '../hooks/useFragments';
 
@@ -31,18 +39,39 @@ function FragmentItem({ fragment }: { fragment: Fragment }) {
   const deleteFragment = useDeleteFragment();
 
   const handleLongPress = () => {
-    const confirmed = window?.confirm
-      ? window.confirm('确定要删除这条记录吗？')
-      : true;
-    if (confirmed) {
-      deleteFragment.mutate(fragment.id);
-    }
+    Alert.alert(
+      '删除碎片',
+      '确定要删除这条记录吗？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => deleteFragment.mutate(fragment.id),
+        },
+      ]
+    );
   };
+
+  const hasText = fragment.content.trim().length > 0;
+  const hasPhoto = !!fragment.photo_uri;
 
   return (
     <TouchableOpacity onLongPress={handleLongPress} activeOpacity={0.7}>
       <View style={styles.item}>
-        <Text style={styles.content}>{fragment.content}</Text>
+        {hasPhoto && (
+          <Image
+            source={{ uri: fragment.photo_uri! }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+        )}
+        {hasText && (
+          <Text style={styles.content}>{fragment.content}</Text>
+        )}
+        {!hasText && !hasPhoto && (
+          <Text style={[styles.content, styles.placeholder]}>（照片）</Text>
+        )}
         <Text style={styles.time}>{formatTime(fragment.created_at)}</Text>
       </View>
     </TouchableOpacity>
@@ -105,10 +134,20 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
+  thumbnail: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
   content: {
     fontSize: 15,
     color: '#333',
     lineHeight: 22,
+  },
+  placeholder: {
+    color: '#999',
+    fontStyle: 'italic',
   },
   time: {
     fontSize: 12,
