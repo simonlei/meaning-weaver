@@ -42,6 +42,16 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: '设置',
+          headerTitle: '设置',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 20, color }}>⚙️</Text>
+          ),
+        }}
+      />
     </Tabs>
   );
 }

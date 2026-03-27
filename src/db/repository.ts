@@ -16,13 +16,17 @@ export interface Repository {
   getReportByWeek(weekKey: string): Promise<Report | null>;
   getAllReports(): Promise<Report[]>;
   getLatestReport(): Promise<Report | null>;
+  // Settings
+  getApiKey(): Promise<string | null>;
+  setApiKey(key: string): Promise<void>;
 }
 
 // ===== localStorage-backed implementation (Web) =====
 const STORAGE_KEY_FRAGMENTS = 'mw_fragments';
 const STORAGE_KEY_REPORTS = 'mw_reports';
+const STORAGE_KEY_API_KEY = 'mw_api_key';
 
-class WebRepository implements Repository {
+export class WebRepository implements Repository {
   private fragments: Fragment[];
   private reports: Report[];
 
@@ -114,10 +118,23 @@ class WebRepository implements Repository {
     if (this.reports.length === 0) return null;
     return [...this.reports].sort((a, b) => b.generated_at - a.generated_at)[0];
   }
+
+  async getApiKey(): Promise<string | null> {
+    const raw = localStorage.getItem(STORAGE_KEY_API_KEY);
+    return raw || null;
+  }
+
+  async setApiKey(key: string): Promise<void> {
+    if (!key) {
+      localStorage.removeItem(STORAGE_KEY_API_KEY);
+    } else {
+      localStorage.setItem(STORAGE_KEY_API_KEY, key);
+    }
+  }
 }
 
 // ===== SQLite implementation (Native) =====
-class SQLiteRepository implements Repository {
+export class SQLiteRepository implements Repository {
   private db: import('expo-sqlite').SQLiteDatabase;
 
   constructor(db: import('expo-sqlite').SQLiteDatabase) {
@@ -205,6 +222,55 @@ class SQLiteRepository implements Repository {
     );
     return row ?? null;
   }
+
+  async getApiKey(): Promise<string | null> {
+    const row = await this.db.getFirstAsync<{ value: string }>(
+      'SELECT value FROM settings WHERE key = ?',
+      ['api_key']
+    );
+    return row?.value ?? null;
+  }
+
+  async setApiKey(key: string): Promise<void> {
+    if (!key) {
+      await this.db.runAsync('DELETE FROM settings WHERE key = ?', ['api_key']);
+    } else {
+      await this.db.runAsync(
+        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+        ['api_key', key]
+      );
+    }
+  }
+}
+
+// ===== Migrations (exported for testing) =====
+export async function runMigrations(db: import('expo-sqlite').SQLiteDatabase): Promise<void> {
+  await db.execAsync('PRAGMA journal_mode = WAL');
+  await db.execAsync('PRAGMA synchronous = NORMAL');
+
+  const result = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  const currentVersion = result?.user_version ?? 0;
+
+  if (currentVersion < 1) {
+    await db.execAsync(`CREATE TABLE IF NOT EXISTS fragments (
+      id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL, week_key TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_fragments_created ON fragments(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_fragments_week ON fragments(week_key);
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY, week_key TEXT NOT NULL UNIQUE, content TEXT NOT NULL,
+      fragment_ids TEXT NOT NULL, model_version TEXT, generated_at INTEGER NOT NULL
+    );`);
+    await db.execAsync('PRAGMA user_version = 1');
+  }
+
+  if (currentVersion < 2) {
+    await db.execAsync(`CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );`);
+    await db.execAsync('PRAGMA user_version = 2');
+  }
 }
 
 // ===== Seed data =====
@@ -235,27 +301,7 @@ export async function getRepository(): Promise<Repository> {
   } else {
     const SQLite = await import('expo-sqlite');
     const db = await SQLite.openDatabaseAsync('meaning-weaver.db');
-    await db.execAsync('PRAGMA journal_mode = WAL');
-    await db.execAsync('PRAGMA synchronous = NORMAL');
-
-    const result = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-    let currentVersion = result?.user_version ?? 0;
-
-    const MIGRATION = `CREATE TABLE IF NOT EXISTS fragments (
-      id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL, week_key TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_fragments_created ON fragments(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_fragments_week ON fragments(week_key);
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY, week_key TEXT NOT NULL UNIQUE, content TEXT NOT NULL,
-      fragment_ids TEXT NOT NULL, model_version TEXT, generated_at INTEGER NOT NULL
-    );`;
-
-    if (currentVersion < 1) {
-      await db.execAsync(MIGRATION);
-      await db.execAsync('PRAGMA user_version = 1');
-    }
-
+    await runMigrations(db);
     cachedRepo = new SQLiteRepository(db);
   }
 
