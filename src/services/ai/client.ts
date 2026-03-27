@@ -23,7 +23,7 @@ export type AIError =
   | { kind: 'invalid_response'; raw: string }
   | { kind: 'no_api_key' };
 
-export async function callClaude(
+export async function callHunyuan(
   apiKey: string | null,
   systemPrompt: string,
   userPrompt: string
@@ -65,7 +65,6 @@ export async function callClaude(
     }
 
     const data = await response.json();
-    console.log('[AI] Raw response:', JSON.stringify(data).slice(0, 500));
     // OpenAI 兼容格式
     const text = data.choices?.[0]?.message?.content ?? '';
 

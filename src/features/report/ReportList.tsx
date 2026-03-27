@@ -72,7 +72,6 @@ export function ReportListScreen() {
   const generateMutation = useMutation({
     mutationFn: () => generateWeeklyReport(repo!),
     onSuccess: (result) => {
-      console.log('[Report] Generation result:', result);
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       if (result.ok) {
         window?.alert?.('✨ 周报已生成！点击查看你的生活洞察');

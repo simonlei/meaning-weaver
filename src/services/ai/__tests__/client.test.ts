@@ -1,18 +1,18 @@
 /**
- * TDD: callClaude - API Key 参数化
+ * TDD: callHunyuan - API Key 参数化
  *
- * 红阶段：callClaude 目前不接受 apiKey 参数，测试应失败。
+ * 红阶段：callHunyuan 目前不接受 apiKey 参数，测试应失败。
  */
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }));
 
-import { callClaude } from '../client';
+import { callHunyuan } from '../client';
 
-describe('callClaude - API Key 验证', () => {
+describe('callHunyuan - API Key 验证', () => {
   it('apiKey 为 null 时返回 no_api_key 错误', async () => {
-    const result = await callClaude(null, 'system prompt', 'user prompt');
+    const result = await callHunyuan(null, 'system prompt', 'user prompt');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('no_api_key');
@@ -20,7 +20,7 @@ describe('callClaude - API Key 验证', () => {
   });
 
   it('apiKey 为空字符串时返回 no_api_key 错误', async () => {
-    const result = await callClaude('', 'system prompt', 'user prompt');
+    const result = await callHunyuan('', 'system prompt', 'user prompt');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('no_api_key');
@@ -28,7 +28,7 @@ describe('callClaude - API Key 验证', () => {
   });
 
   it('apiKey 为占位符 YOUR_HUNYUAN_API_KEY 时返回 no_api_key 错误', async () => {
-    const result = await callClaude('YOUR_HUNYUAN_API_KEY', 'system prompt', 'user prompt');
+    const result = await callHunyuan('YOUR_HUNYUAN_API_KEY', 'system prompt', 'user prompt');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('no_api_key');
@@ -36,7 +36,7 @@ describe('callClaude - API Key 验证', () => {
   });
 
   it('apiKey 以 YOUR_ 开头时返回 no_api_key 错误', async () => {
-    const result = await callClaude('YOUR_OTHER_KEY', 'system prompt', 'user prompt');
+    const result = await callHunyuan('YOUR_OTHER_KEY', 'system prompt', 'user prompt');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('no_api_key');
@@ -48,7 +48,7 @@ describe('callClaude - API Key 验证', () => {
       status: 401,
       ok: false,
     }) as any;
-    const result = await callClaude('real-valid-key', 'system', 'user');
+    const result = await callHunyuan('real-valid-key', 'system', 'user');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('auth');
@@ -60,7 +60,7 @@ describe('callClaude - API Key 验证', () => {
       status: 429,
       ok: false,
     }) as any;
-    const result = await callClaude('real-valid-key', 'system', 'user');
+    const result = await callHunyuan('real-valid-key', 'system', 'user');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('rate_limit');
@@ -77,7 +77,7 @@ describe('callClaude - API Key 验证', () => {
     }) as any;
     global.fetch = mockFetch;
 
-    await callClaude('my-actual-key', 'system', 'user');
+    await callHunyuan('my-actual-key', 'system', 'user');
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const callArgs = mockFetch.mock.calls[0];

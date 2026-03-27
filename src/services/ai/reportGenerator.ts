@@ -1,7 +1,7 @@
 import { Fragment, ReportContent, computeWeekKey } from '../../db/schema';
 import { Repository } from '../../db/repository';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts';
-import { callClaude, AIError } from './client';
+import { callHunyuan, AIError } from './client';
 import { Result, Ok, Err } from '../../lib/result';
 
 function createFallbackReport(fragments: Fragment[]): ReportContent {
@@ -65,7 +65,12 @@ export async function generateWeeklyReport(
 
   const userPrompt = buildUserPrompt(fragments, previousSummary);
   const apiKey = await repo.getApiKey();
-  const result = await callClaude(apiKey, SYSTEM_PROMPT, userPrompt);
+  const result = await callHunyuan(apiKey, SYSTEM_PROMPT, userPrompt);
+
+  // no_api_key 直接冒泡，不降级也不存报告，让调用方（UI）处理跳转逻辑
+  if (!result.ok && result.error.kind === 'no_api_key') {
+    return Err(result.error);
+  }
 
   let reportContent: ReportContent;
 
@@ -80,7 +85,7 @@ export async function generateWeeklyReport(
     targetWeek,
     reportContent,
     fragments.map((f) => f.id),
-    result.ok ? 'claude-sonnet-4' : 'local-fallback'
+    result.ok ? 'hunyuan-turbos-latest' : 'local-fallback'
   );
 
   return Ok(reportContent);
