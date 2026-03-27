@@ -39,8 +39,8 @@ jobs:
           # Only build arm64-v8a (covers 95%+ modern devices, cuts APK size ~75%)
           sed -i 's/reactNativeArchitectures=.*/reactNativeArchitectures=arm64-v8a/' android/gradle.properties
           # Enable ProGuard/R8 code shrinking + resource shrinking for release
-          sed -i 's/android.enableMinifyInReleaseBuilds.*/android.enableMinifyInReleaseBuilds=true/' android/gradle.properties
-          # Add shrink resources property if not present
+          # (these properties don't exist by default, so append them)
+          echo 'android.enableMinifyInReleaseBuilds=true' >> android/gradle.properties
           echo 'android.enableShrinkResourcesInReleaseBuilds=true' >> android/gradle.properties
 
       - name: Build APK with Gradle
