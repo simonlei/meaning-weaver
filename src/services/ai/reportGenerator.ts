@@ -64,7 +64,8 @@ export async function generateWeeklyReport(
   }
 
   const userPrompt = buildUserPrompt(fragments, previousSummary);
-  const result = await callClaude(SYSTEM_PROMPT, userPrompt);
+  const apiKey = await repo.getApiKey();
+  const result = await callClaude(apiKey, SYSTEM_PROMPT, userPrompt);
 
   let reportContent: ReportContent;
 
