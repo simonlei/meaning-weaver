@@ -340,7 +340,7 @@ export function FragmentInput() {
                     style={styles.additionalPromptInput}
                     value={additionalPromptText}
                     onChangeText={setAdditionalPromptText}
-                    placeholder="补充说明（可选，如"这是我的朋友小李"）"
+                    placeholder={'补充说明（可选，如\u201c这是我的朋友小李\u201d）'}
                     placeholderTextColor="#A0A0A0"
                   />
                   <TouchableOpacity
