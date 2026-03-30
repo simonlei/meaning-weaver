@@ -220,7 +220,15 @@ export function FragmentInput() {
         );
         return;
       }
-      await startRecording();
+      try {
+        await startRecording();
+      } catch (e) {
+        Alert.alert(
+          '录音启动失败',
+          e instanceof Error ? e.message : '未知错误，请重试。',
+          [{ text: '好的' }]
+        );
+      }
     }
   };
 

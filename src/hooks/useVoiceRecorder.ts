@@ -93,6 +93,10 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     await recorder.prepareToRecordAsync();
     recorder.record();
 
+    if (!recorder.isRecording) {
+      throw new Error('录音启动失败：recorder.record() 调用后仍未进入录音状态');
+    }
+
     // Auto-stop at 60s (Tencent ASR hard limit)
     autoStopTimer.current = setTimeout(() => {
       if (recorder.isRecording) {
