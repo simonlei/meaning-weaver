@@ -44,6 +44,7 @@ describe('SQLiteRepository – audio_uri support', () => {
       const fragment = await repo.insertFragment(
         'Test voice content',
         undefined,
+        undefined,
         'file:///audio/test.m4a'
       );
       expect(fragment.audio_uri).toBe('file:///audio/test.m4a');
@@ -58,6 +59,7 @@ describe('SQLiteRepository – audio_uri support', () => {
       const fragment = await repo.insertFragment(
         'With both',
         'file:///photos/test.jpg',
+        undefined,
         'file:///audio/test.m4a'
       );
       expect(fragment.photo_uri).toBe('file:///photos/test.jpg');
@@ -69,6 +71,7 @@ describe('SQLiteRepository – audio_uri support', () => {
     it('deletes audio file when fragment has audio_uri', async () => {
       const fragment = await repo.insertFragment(
         'Voice fragment',
+        undefined,
         undefined,
         'file:///audio/voice.m4a'
       );
@@ -92,6 +95,7 @@ describe('SQLiteRepository – audio_uri support', () => {
       const fragment = await repo.insertFragment(
         'Both media',
         'file:///photos/photo.jpg',
+        undefined,
         'file:///audio/audio.m4a'
       );
 
@@ -119,6 +123,7 @@ describe('SQLiteRepository – audio_uri support', () => {
       const fragment = await repo.insertFragment(
         'Voice fragment',
         undefined,
+        undefined,
         'file:///audio/missing.m4a'
       );
 
@@ -139,6 +144,7 @@ describe('SQLiteRepository – audio_uri support', () => {
     it('removes fragment from DB even if file cleanup fails', async () => {
       const fragment = await repo.insertFragment(
         'Voice fragment',
+        undefined,
         undefined,
         'file:///audio/will-fail.m4a'
       );

@@ -11,19 +11,27 @@ import {
   Platform,
   Animated,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { useCreateFragment } from '../hooks/useFragments';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
-import { useAsrCredentials } from '../hooks/useSettings';
+import { useAsrCredentials, useApiKey } from '../hooks/useSettings';
 import { transcribeAudio } from '../services/asr/asrService';
+import { describePhoto } from '../services/ai/photoDescriber';
 
 const MAX_RECORDING_SECONDS = 60;
 
 export function FragmentInput() {
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoDescription, setPhotoDescription] = useState<string | null>(null);
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editDescriptionText, setEditDescriptionText] = useState('');
+  const [isRegeneratingWithPrompt, setIsRegeneratingWithPrompt] = useState(false);
+  const [additionalPromptText, setAdditionalPromptText] = useState('');
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -31,6 +39,7 @@ export function FragmentInput() {
   const createFragment = useCreateFragment();
 
   const { data: asrCreds } = useAsrCredentials();
+  const { data: apiKey } = useApiKey();
   const {
     startRecording,
     stopRecording,
@@ -55,7 +64,11 @@ export function FragmentInput() {
     }
   }, [isRecording, pulseAnim]);
 
-  const canSend = (text.trim().length > 0 || photoUri !== null || audioUri !== null) && !isRecording && !isTranscribing;
+  const canSend =
+    (text.trim().length > 0 || photoUri !== null || audioUri !== null) &&
+    !isRecording &&
+    !isTranscribing &&
+    !isGeneratingDescription;
 
   const handlePickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -75,8 +88,58 @@ export function FragmentInput() {
     });
 
     if (!result.canceled && result.assets?.[0]?.uri) {
-      setPhotoUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setPhotoUri(uri);
+      setPhotoDescription(null);
+      setIsEditingDescription(false);
+      setAdditionalPromptText('');
+      setIsRegeneratingWithPrompt(false);
+
+      // Auto-generate description
+      if (apiKey) {
+        setIsGeneratingDescription(true);
+        try {
+          const descResult = await describePhoto(uri, apiKey);
+          if (descResult.ok) {
+            setPhotoDescription(descResult.value);
+          }
+          // On failure: silently skip, user can manually add or regenerate
+        } finally {
+          setIsGeneratingDescription(false);
+        }
+      }
     }
+  };
+
+  const handleRegenerateDescription = async () => {
+    if (!photoUri || !apiKey) return;
+    setIsRegeneratingWithPrompt(false);
+    setIsGeneratingDescription(true);
+    try {
+      const descResult = await describePhoto(
+        photoUri,
+        apiKey,
+        additionalPromptText.trim() || undefined
+      );
+      if (descResult.ok) {
+        setPhotoDescription(descResult.value);
+        setAdditionalPromptText('');
+      } else {
+        Alert.alert('重新生成失败', '请检查网络或 API Key 后重试。');
+      }
+    } finally {
+      setIsGeneratingDescription(false);
+    }
+  };
+
+  const handleStartEdit = () => {
+    setEditDescriptionText(photoDescription ?? '');
+    setIsEditingDescription(true);
+  };
+
+  const handleSaveEdit = () => {
+    setPhotoDescription(editDescriptionText.trim() || null);
+    setIsEditingDescription(false);
   };
 
   const handleMicPress = async () => {
@@ -173,11 +236,20 @@ export function FragmentInput() {
     if (!canSend) return;
 
     createFragment.mutate(
-      { content: text.trim(), photoUri: photoUri ?? undefined, audioUri: audioUri ?? undefined },
+      {
+        content: text.trim(),
+        photoUri: photoUri ?? undefined,
+        photoDescription: photoDescription ?? undefined,
+        audioUri: audioUri ?? undefined,
+      },
       {
         onSuccess: () => {
           setText('');
           setPhotoUri(null);
+          setPhotoDescription(null);
+          setIsEditingDescription(false);
+          setAdditionalPromptText('');
+          setIsRegeneratingWithPrompt(false);
           setAudioUri(null);
           setAudioDurationMs(0);
           // Keep keyboard open for continuous input
@@ -197,15 +269,95 @@ export function FragmentInput() {
     <View style={styles.wrapper}>
       {/* Photo preview */}
       {photoUri && (
-        <View style={styles.previewContainer}>
-          <Image source={{ uri: photoUri }} style={styles.preview} />
-          <TouchableOpacity
-            style={styles.removeMedia}
-            onPress={() => setPhotoUri(null)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.removeMediaText}>✕</Text>
-          </TouchableOpacity>
+        <View style={styles.photoCard}>
+          <View style={styles.previewContainer}>
+            <Image source={{ uri: photoUri }} style={styles.preview} />
+            <TouchableOpacity
+              style={styles.removeMedia}
+              onPress={() => {
+                setPhotoUri(null);
+                setPhotoDescription(null);
+                setIsEditingDescription(false);
+                setAdditionalPromptText('');
+                setIsRegeneratingWithPrompt(false);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.removeMediaText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Description area */}
+          {isGeneratingDescription && (
+            <View style={styles.descriptionLoading}>
+              <ActivityIndicator size="small" color="#6B5B4F" />
+              <Text style={styles.descriptionLoadingText}>AI 正在理解这张照片...</Text>
+            </View>
+          )}
+
+          {!isGeneratingDescription && isEditingDescription && (
+            <View style={styles.descriptionEditBox}>
+              <TextInput
+                style={styles.descriptionEditInput}
+                value={editDescriptionText}
+                onChangeText={setEditDescriptionText}
+                multiline
+                autoFocus
+                placeholder="输入对照片的描述..."
+                placeholderTextColor="#A0A0A0"
+              />
+              <TouchableOpacity style={styles.descriptionEditSave} onPress={handleSaveEdit}>
+                <Text style={styles.descriptionEditSaveText}>保存</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!isGeneratingDescription && !isEditingDescription && photoDescription && (
+            <View style={styles.descriptionBox}>
+              <Text style={styles.descriptionText}>{photoDescription}</Text>
+              <View style={styles.descriptionActions}>
+                <TouchableOpacity style={styles.descriptionBtn} onPress={handleStartEdit}>
+                  <Text style={styles.descriptionBtnText}>✏️ 编辑</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.descriptionBtn}
+                  onPress={() => setIsRegeneratingWithPrompt((v) => !v)}
+                >
+                  <Text style={styles.descriptionBtnText}>🔄 重新生成</Text>
+                </TouchableOpacity>
+              </View>
+              {isRegeneratingWithPrompt && (
+                <View style={styles.additionalPromptRow}>
+                  <TextInput
+                    style={styles.additionalPromptInput}
+                    value={additionalPromptText}
+                    onChangeText={setAdditionalPromptText}
+                    placeholder="补充说明（可选，如"这是我的朋友小李"）"
+                    placeholderTextColor="#A0A0A0"
+                  />
+                  <TouchableOpacity
+                    style={styles.additionalPromptBtn}
+                    onPress={handleRegenerateDescription}
+                  >
+                    <Text style={styles.additionalPromptBtnText}>生成</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {!isGeneratingDescription && !isEditingDescription && !photoDescription && (
+            <View style={styles.descriptionActions}>
+              <TouchableOpacity style={styles.descriptionBtn} onPress={handleStartEdit}>
+                <Text style={styles.descriptionBtnText}>✏️ 手动添加描述</Text>
+              </TouchableOpacity>
+              {apiKey && (
+                <TouchableOpacity style={styles.descriptionBtn} onPress={handleRegenerateDescription}>
+                  <Text style={styles.descriptionBtnText}>🔄 AI 生成描述</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </View>
       )}
 
@@ -237,7 +389,7 @@ export function FragmentInput() {
           <TouchableOpacity
             style={styles.mediaButton}
             onPress={handlePickPhoto}
-            disabled={createFragment.isPending || isTranscribing}
+            disabled={createFragment.isPending || isTranscribing || isGeneratingDescription}
           >
             <Text style={styles.mediaButtonText}>🖼</Text>
           </TouchableOpacity>
@@ -251,7 +403,7 @@ export function FragmentInput() {
               isRecording && styles.mediaButtonRecording,
             ]}
             onPress={handleMicPress}
-            disabled={createFragment.isPending || isTranscribing}
+            disabled={createFragment.isPending || isTranscribing || isGeneratingDescription}
           >
             {isRecording ? (
               <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
@@ -311,16 +463,111 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#E5E5E5',
   },
-  previewContainer: {
-    position: 'relative',
+  photoCard: {
     marginHorizontal: 16,
     marginTop: 10,
+  },
+  previewContainer: {
+    position: 'relative',
     alignSelf: 'flex-start',
   },
   preview: {
     width: 80,
     height: 80,
     borderRadius: 8,
+  },
+  descriptionLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  descriptionLoadingText: {
+    fontSize: 13,
+    color: '#888',
+    fontStyle: 'italic',
+  },
+  descriptionBox: {
+    marginTop: 8,
+    backgroundColor: '#F5F0EB',
+    borderRadius: 8,
+    padding: 10,
+  },
+  descriptionText: {
+    fontSize: 13,
+    color: '#555',
+    lineHeight: 20,
+  },
+  descriptionActions: {
+    flexDirection: 'row',
+    marginTop: 6,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  descriptionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#EDE8E3',
+    borderRadius: 12,
+  },
+  descriptionBtnText: {
+    fontSize: 12,
+    color: '#6B5B4F',
+    fontWeight: '500',
+  },
+  additionalPromptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  additionalPromptInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 13,
+    color: '#333',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#CCC',
+  },
+  additionalPromptBtn: {
+    backgroundColor: '#6B5B4F',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  additionalPromptBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  descriptionEditBox: {
+    marginTop: 8,
+    backgroundColor: '#F5F0EB',
+    borderRadius: 8,
+    padding: 10,
+  },
+  descriptionEditInput: {
+    fontSize: 13,
+    color: '#333',
+    lineHeight: 20,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  descriptionEditSave: {
+    alignSelf: 'flex-end',
+    marginTop: 6,
+    backgroundColor: '#6B5B4F',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+  },
+  descriptionEditSaveText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
   audioChip: {
     flexDirection: 'row',

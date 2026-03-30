@@ -1,5 +1,8 @@
 /**
- * TDD: reportGenerator — 模型选择、5张图限制、fallback保护、文件读取失败降级
+ * Tests for reportGenerator:
+ * - 统一使用文本模型（视觉路径已移除）
+ * - photo_description 注入 buildUserPrompt
+ * - fallback 保护
  */
 
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
@@ -20,10 +23,6 @@ import { generateWeeklyReport } from '../reportGenerator';
 import { Fragment } from '../../../db/schema';
 import { Ok, Err } from '../../../lib/result';
 
-// Access mocked modules through require after imports
-const ImageManipulator = require('expo-image-manipulator');
-const FileSystem = require('expo-file-system');
-
 const VALID_REPORT_CONTENT = {
   version: 1 as const,
   snapshot: { title: '测试', summary: '摘要', mood_palette: ['平静'] },
@@ -37,8 +36,8 @@ function makeTextFragment(id: string, content: string, createdAt = Date.now()): 
   return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: null };
 }
 
-function makePhotoFragment(id: string, photoUri: string, content = '', createdAt = Date.now()): Fragment {
-  return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: photoUri };
+function makePhotoFragment(id: string, photoUri: string, content = '', photoDescription?: string, createdAt = Date.now()): Fragment {
+  return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: photoUri, photo_description: photoDescription ?? null };
 }
 
 function makeRepo(fragments: Fragment[], apiKey = 'real-key') {
@@ -50,12 +49,10 @@ function makeRepo(fragments: Fragment[], apiKey = 'real-key') {
   } as any;
 }
 
-describe('reportGenerator — 模型选择', () => {
+describe('reportGenerator — 统一使用文本模型', () => {
   beforeEach(() => {
     mockCallHunyuan.mockReset();
     mockCallHunyuan.mockResolvedValue(Ok(VALID_REPORT_CONTENT));
-    ImageManipulator.manipulateAsync.mockResolvedValue({ uri: 'file:///mock/compressed.jpg' });
-    FileSystem.readAsStringAsync.mockResolvedValue('base64mockdata');
   });
 
   it('无照片碎片时使用 hunyuan-turbos-latest', async () => {
@@ -69,7 +66,7 @@ describe('reportGenerator — 模型选择', () => {
     expect(model).toBe('hunyuan-turbos-latest');
   });
 
-  it('有照片碎片时使用 hunyuan-vision-1.5-instruct', async () => {
+  it('有照片碎片（无描述）时也使用 hunyuan-turbos-latest', async () => {
     const fragments = [
       makeTextFragment('f1', '文字'),
       makePhotoFragment('f2', 'file:///photo.jpg'),
@@ -79,10 +76,22 @@ describe('reportGenerator — 模型选择', () => {
     await generateWeeklyReport(repo);
 
     const [, , , model] = mockCallHunyuan.mock.calls[0];
-    expect(model).toBe('hunyuan-vision-1.5-instruct');
+    expect(model).toBe('hunyuan-turbos-latest');
   });
 
-  it('model_version 按实际使用模型存储（无照片）', async () => {
+  it('有照片碎片（含描述）时也使用 hunyuan-turbos-latest', async () => {
+    const fragments = [
+      makePhotoFragment('f1', 'file:///photo.jpg', '', '午后的咖啡馆，阳光斜射'),
+    ];
+    const repo = makeRepo(fragments);
+
+    await generateWeeklyReport(repo);
+
+    const [, , , model] = mockCallHunyuan.mock.calls[0];
+    expect(model).toBe('hunyuan-turbos-latest');
+  });
+
+  it('model_version 存储为 hunyuan-turbos-latest', async () => {
     const fragments = [makeTextFragment('f1', '纯文字')];
     const repo = makeRepo(fragments);
 
@@ -96,8 +105,8 @@ describe('reportGenerator — 模型选择', () => {
     );
   });
 
-  it('model_version 按实际使用模型存储（有照片）', async () => {
-    const fragments = [makePhotoFragment('f1', 'file:///p.jpg')];
+  it('有照片描述的碎片，model_version 仍为 hunyuan-turbos-latest', async () => {
+    const fragments = [makePhotoFragment('f1', 'file:///p.jpg', '', '一只小猫在窗台上打盹')];
     const repo = makeRepo(fragments);
 
     await generateWeeklyReport(repo);
@@ -106,95 +115,58 @@ describe('reportGenerator — 模型选择', () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      'hunyuan-vision-1.5-instruct'
+      'hunyuan-turbos-latest'
     );
   });
 });
 
-describe('reportGenerator — 照片压缩与 base64 传递', () => {
+describe('reportGenerator — photo_description 注入 Prompt', () => {
   beforeEach(() => {
     mockCallHunyuan.mockReset();
     mockCallHunyuan.mockResolvedValue(Ok(VALID_REPORT_CONTENT));
-    ImageManipulator.manipulateAsync.mockClear();
-    ImageManipulator.manipulateAsync.mockResolvedValue({ uri: 'file:///mock/compressed.jpg' });
-    FileSystem.readAsStringAsync.mockClear();
-    FileSystem.readAsStringAsync.mockResolvedValue('base64mockdata');
   });
 
-  it('有照片时调用 manipulateAsync 压缩图片', async () => {
-    const fragments = [makePhotoFragment('f1', 'file:///orig.jpg')];
-    const repo = makeRepo(fragments);
-
-    await generateWeeklyReport(repo);
-
-    expect(ImageManipulator.manipulateAsync).toHaveBeenCalledWith(
-      'file:///orig.jpg',
-      expect.arrayContaining([expect.objectContaining({ resize: expect.anything() })]),
-      expect.objectContaining({ format: 'jpeg' })
-    );
-  });
-
-  it('有照片时调用 readAsStringAsync 读取 base64', async () => {
-    const fragments = [makePhotoFragment('f1', 'file:///orig.jpg')];
-    const repo = makeRepo(fragments);
-
-    await generateWeeklyReport(repo);
-
-    expect(FileSystem.readAsStringAsync).toHaveBeenCalledWith(
-      'file:///mock/compressed.jpg',
-      expect.objectContaining({ encoding: 'base64' })
-    );
-  });
-
-  it('callHunyuan 收到包含 image_url 的 content 数组', async () => {
-    const fragments = [makePhotoFragment('f1', 'file:///orig.jpg', '今天很开心')];
+  it('有 photo_description 的碎片，userContent 为字符串（不是数组）', async () => {
+    const fragments = [makePhotoFragment('f1', 'file:///photo.jpg', '今天很开心', '午后阳光斜射在咖啡馆')];
     const repo = makeRepo(fragments);
 
     await generateWeeklyReport(repo);
 
     const [, , userContent] = mockCallHunyuan.mock.calls[0];
-    expect(Array.isArray(userContent)).toBe(true);
-    const imagePart = (userContent as any[]).find((p: any) => p.type === 'image_url');
-    expect(imagePart).toBeDefined();
-    expect(imagePart.image_url.url).toContain('data:image/jpeg;base64,');
-  });
-});
-
-describe('reportGenerator — 5张照片上限', () => {
-  beforeEach(() => {
-    mockCallHunyuan.mockReset();
-    mockCallHunyuan.mockResolvedValue(Ok(VALID_REPORT_CONTENT));
-    ImageManipulator.manipulateAsync.mockClear();
-    ImageManipulator.manipulateAsync.mockResolvedValue({ uri: 'file:///mock/compressed.jpg' });
-    FileSystem.readAsStringAsync.mockClear();
-    FileSystem.readAsStringAsync.mockResolvedValue('base64mockdata');
+    expect(typeof userContent).toBe('string');
   });
 
-  it('超过5张时只压缩前5张图片', async () => {
-    const fragments = Array.from({ length: 8 }, (_, i) =>
-      makePhotoFragment(`f${i}`, `file:///p${i}.jpg`, '', i * 1000)
-    );
-    const repo = makeRepo(fragments);
-
-    await generateWeeklyReport(repo);
-
-    // 应该只有5次 manipulateAsync 调用（最新5张）
-    expect(ImageManipulator.manipulateAsync).toHaveBeenCalledTimes(5);
-  });
-
-  it('超过5张时 content 数组中 image_url 部件不超过5个', async () => {
-    const fragments = Array.from({ length: 6 }, (_, i) =>
-      makePhotoFragment(`f${i}`, `file:///p${i}.jpg`, `内容${i}`, i * 1000)
-    );
+  it('userContent 包含 [图片描述：...] 格式', async () => {
+    const description = '一只橘猫在窗台上打盹，阳光暖暖的';
+    const fragments = [makePhotoFragment('f1', 'file:///photo.jpg', '', description)];
     const repo = makeRepo(fragments);
 
     await generateWeeklyReport(repo);
 
     const [, , userContent] = mockCallHunyuan.mock.calls[0];
-    if (Array.isArray(userContent)) {
-      const imageParts = (userContent as any[]).filter((p: any) => p.type === 'image_url');
-      expect(imageParts.length).toBeLessThanOrEqual(5);
-    }
+    expect(userContent as string).toContain(`[图片描述：${description}]`);
+  });
+
+  it('无 photo_description 的图片碎片不出现 [图片描述：] 标记', async () => {
+    const fragments = [makePhotoFragment('f2', 'file:///photo2.jpg', '这是一张没有描述的照片')];
+    const repo = makeRepo(fragments);
+
+    await generateWeeklyReport(repo);
+
+    const [, , userContent] = mockCallHunyuan.mock.calls[0];
+    expect(userContent as string).not.toContain('[图片描述：');
+  });
+
+  it('不调用 ImageManipulator（视觉路径已移除）', async () => {
+    const ImageManipulator = require('expo-image-manipulator');
+    ImageManipulator.manipulateAsync.mockClear();
+
+    const fragments = [makePhotoFragment('f1', 'file:///photo.jpg', '', '测试描述')];
+    const repo = makeRepo(fragments);
+
+    await generateWeeklyReport(repo);
+
+    expect(ImageManipulator.manipulateAsync).not.toHaveBeenCalled();
   });
 });
 
@@ -202,42 +174,25 @@ describe('reportGenerator — 照片文件读取失败降级', () => {
   beforeEach(() => {
     mockCallHunyuan.mockReset();
     mockCallHunyuan.mockResolvedValue(Ok(VALID_REPORT_CONTENT));
-    ImageManipulator.manipulateAsync.mockClear();
-    FileSystem.readAsStringAsync.mockClear();
   });
 
-  it('readAsStringAsync 失败时周报仍然生成（不崩溃）', async () => {
-    ImageManipulator.manipulateAsync.mockResolvedValue({ uri: 'file:///mock/compressed.jpg' });
-    FileSystem.readAsStringAsync.mockRejectedValueOnce(new Error('File not found'));
+  it('周报正常生成（不崩溃），即使图片无描述', async () => {
     const fragments = [makePhotoFragment('f1', 'file:///gone.jpg', '文字')];
     const repo = makeRepo(fragments);
 
     await expect(generateWeeklyReport(repo)).resolves.toBeDefined();
     expect(repo.insertReport).toHaveBeenCalled();
   });
-
-  it('manipulateAsync 失败时跳过该图片，周报仍然生成', async () => {
-    ImageManipulator.manipulateAsync.mockRejectedValueOnce(new Error('Manipulate failed'));
-    const fragments = [makePhotoFragment('f1', 'file:///bad.jpg')];
-    const repo = makeRepo(fragments);
-
-    await expect(generateWeeklyReport(repo)).resolves.toBeDefined();
-  });
 });
 
 describe('reportGenerator — createFallbackReport 空 content 保护', () => {
   it('照片专用碎片（content=""）降级时 notable_moments 显示占位文本而非空字符串', async () => {
     mockCallHunyuan.mockReset();
-    ImageManipulator.manipulateAsync.mockClear();
-    FileSystem.readAsStringAsync.mockClear();
-
-    ImageManipulator.manipulateAsync.mockResolvedValue({ uri: 'file:///mock/compressed.jpg' });
-    FileSystem.readAsStringAsync.mockResolvedValue('base64mockdata');
 
     // AI 失败，触发 fallback
     mockCallHunyuan.mockResolvedValue(Err({ kind: 'network', message: 'timeout' }));
 
-    const fragments = [makePhotoFragment('f1', 'file:///p.jpg', '')];
+    const fragments = [makePhotoFragment('f1', 'file:///p.jpg', '', '美丽的一天')];
     const repo = makeRepo(fragments);
 
     const result = await generateWeeklyReport(repo);
