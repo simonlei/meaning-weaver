@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   Text,
   StyleSheet,
-  Keyboard,
   Image,
   Alert,
   Platform,
@@ -28,7 +27,6 @@ export function FragmentInput() {
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const {
-    descState,
     dispatch: descDispatch,
     isGenerating: isGeneratingDescription,
     isEditing: isEditingDescription,
