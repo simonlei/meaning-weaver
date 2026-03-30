@@ -4,9 +4,17 @@ const app = express();
 
 app.use(express.json({ limit: '10mb' })); // 提升上限以支持 base64 图片传输（vision 模型）
 
+// TODO-016: Restrict CORS to known dev origins instead of wildcard '*'
+// Allowed origins: Expo bundler (Metro) and Expo web dev server ports.
+const ALLOWED_ORIGINS = ['http://localhost:8081', 'http://localhost:19006'];
+
 // CORS headers
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+  }
   res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-ASR-Secret-Id, X-ASR-Secret-Key');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
@@ -15,6 +23,10 @@ app.use((req, res, next) => {
 
 // Proxy to Hunyuan
 app.post('/v1/chat/completions', async (req, res) => {
+  // TODO-027: Validate Authorization header before forwarding to upstream API
+  if (!req.headers.authorization) {
+    return res.status(401).json({ error: 'Missing Authorization header' });
+  }
   try {
     const response = await fetch('https://api.hunyuan.cloud.tencent.com/v1/chat/completions', {
       method: 'POST',
@@ -172,7 +184,12 @@ app.post('/api/transcribe', async (req, res) => {
 });
 
 const PORT = 3001;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Hunyuan proxy running on http://0.0.0.0:${PORT}`);
-  console.log(`Tencent ASR proxy available at http://0.0.0.0:${PORT}/api/transcribe`);
+// TODO-005: Bind to 127.0.0.1 (loopback only) instead of 0.0.0.0 for security.
+// Android emulators can still reach this server via:
+//   adb reverse tcp:3001 tcp:3001
+// which tunnels the emulator's localhost:3001 to the host's localhost:3001,
+// removing any need to expose the proxy on all network interfaces.
+app.listen(PORT, '127.0.0.1', () => {
+  console.log(`Hunyuan proxy running on http://127.0.0.1:${PORT}`);
+  console.log(`Tencent ASR proxy available at http://127.0.0.1:${PORT}/api/transcribe`);
 });

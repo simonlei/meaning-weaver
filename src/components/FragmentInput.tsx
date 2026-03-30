@@ -20,18 +20,23 @@ import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import { useAsrCredentials, useApiKey } from '../hooks/useSettings';
 import { transcribeAudio } from '../services/asr/asrService';
 import { describePhoto } from '../services/ai/photoDescriber';
+import { usePhotoDescription } from '../hooks/usePhotoDescription';
 
 const MAX_RECORDING_SECONDS = 60;
 
 export function FragmentInput() {
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [photoDescription, setPhotoDescription] = useState<string | null>(null);
-  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editDescriptionText, setEditDescriptionText] = useState('');
-  const [isRegeneratingWithPrompt, setIsRegeneratingWithPrompt] = useState(false);
-  const [additionalPromptText, setAdditionalPromptText] = useState('');
+  const {
+    descState,
+    dispatch: descDispatch,
+    isGenerating: isGeneratingDescription,
+    isEditing: isEditingDescription,
+    isRegenerating: isRegeneratingWithPrompt,
+    description: photoDescription,
+    draft: editDescriptionText,
+    additionalPrompt: additionalPromptText,
+  } = usePhotoDescription();
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [audioDurationMs, setAudioDurationMs] = useState(0);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -71,75 +76,67 @@ export function FragmentInput() {
     !isGeneratingDescription;
 
   const handlePickPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        '需要相册权限',
-        '请在系统设置中允许「意义编织」访问你的相册。',
-        [{ text: '好的' }]
-      );
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('需要相册权限', '请在系统设置中允许「意义编织」访问你的相册。', [{ text: '好的' }]);
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const uri = result.assets[0].uri;
+        setPhotoUri(uri);
+        descDispatch({ type: 'RESET' });
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      const uri = result.assets[0].uri;
-      setPhotoUri(uri);
-      setPhotoDescription(null);
-      setIsEditingDescription(false);
-      setAdditionalPromptText('');
-      setIsRegeneratingWithPrompt(false);
-
-      // Auto-generate description
-      if (apiKey) {
-        setIsGeneratingDescription(true);
-        try {
-          const descResult = await describePhoto(uri, apiKey);
-          if (descResult.ok) {
-            setPhotoDescription(descResult.value);
+        // Auto-generate description
+        if (apiKey) {
+          descDispatch({ type: 'GENERATE_START' });
+          try {
+            const descResult = await describePhoto(uri, apiKey);
+            if (descResult.ok) {
+              descDispatch({ type: 'GENERATE_SUCCESS', description: descResult.value });
+            } else {
+              descDispatch({ type: 'GENERATE_FAILURE' });
+            }
+            // On failure: silently skip, user can manually add or regenerate
+          } catch {
+            descDispatch({ type: 'GENERATE_FAILURE' });
           }
-          // On failure: silently skip, user can manually add or regenerate
-        } finally {
-          setIsGeneratingDescription(false);
         }
       }
+    } catch (e) {
+      console.warn('Photo picker failed:', e);
     }
   };
 
   const handleRegenerateDescription = async () => {
     if (!photoUri || !apiKey) return;
-    setIsRegeneratingWithPrompt(false);
-    setIsGeneratingDescription(true);
+    const prompt = additionalPromptText.trim() || undefined;
+    descDispatch({ type: 'GENERATE_START' });
     try {
-      const descResult = await describePhoto(
-        photoUri,
-        apiKey,
-        additionalPromptText.trim() || undefined
-      );
+      const descResult = await describePhoto(photoUri, apiKey, prompt);
       if (descResult.ok) {
-        setPhotoDescription(descResult.value);
-        setAdditionalPromptText('');
+        descDispatch({ type: 'REGEN_SUCCESS', description: descResult.value });
       } else {
+        descDispatch({ type: 'GENERATE_FAILURE' });
         Alert.alert('重新生成失败', '请检查网络或 API Key 后重试。');
       }
-    } finally {
-      setIsGeneratingDescription(false);
+    } catch {
+      descDispatch({ type: 'GENERATE_FAILURE' });
+      Alert.alert('重新生成失败', '请检查网络或 API Key 后重试。');
     }
   };
 
   const handleStartEdit = () => {
-    setEditDescriptionText(photoDescription ?? '');
-    setIsEditingDescription(true);
+    descDispatch({ type: 'EDIT_START', currentDescription: photoDescription ?? '' });
   };
 
   const handleSaveEdit = () => {
-    setPhotoDescription(editDescriptionText.trim() || null);
-    setIsEditingDescription(false);
+    descDispatch({ type: 'EDIT_COMMIT' });
   };
 
   const handleMicPress = async () => {
@@ -246,10 +243,7 @@ export function FragmentInput() {
         onSuccess: () => {
           setText('');
           setPhotoUri(null);
-          setPhotoDescription(null);
-          setIsEditingDescription(false);
-          setAdditionalPromptText('');
-          setIsRegeneratingWithPrompt(false);
+          descDispatch({ type: 'RESET' });
           setAudioUri(null);
           setAudioDurationMs(0);
           // Keep keyboard open for continuous input
@@ -276,10 +270,7 @@ export function FragmentInput() {
               style={styles.removeMedia}
               onPress={() => {
                 setPhotoUri(null);
-                setPhotoDescription(null);
-                setIsEditingDescription(false);
-                setAdditionalPromptText('');
-                setIsRegeneratingWithPrompt(false);
+                descDispatch({ type: 'RESET' });
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
@@ -300,7 +291,7 @@ export function FragmentInput() {
               <TextInput
                 style={styles.descriptionEditInput}
                 value={editDescriptionText}
-                onChangeText={setEditDescriptionText}
+                onChangeText={(text) => descDispatch({ type: 'DRAFT_CHANGE', draft: text })}
                 multiline
                 autoFocus
                 placeholder="输入对照片的描述..."
@@ -321,7 +312,7 @@ export function FragmentInput() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.descriptionBtn}
-                  onPress={() => setIsRegeneratingWithPrompt((v) => !v)}
+                  onPress={() => descDispatch({ type: 'REGEN_TOGGLE' })}
                 >
                   <Text style={styles.descriptionBtnText}>🔄 重新生成</Text>
                 </TouchableOpacity>
@@ -331,7 +322,7 @@ export function FragmentInput() {
                   <TextInput
                     style={styles.additionalPromptInput}
                     value={additionalPromptText}
-                    onChangeText={setAdditionalPromptText}
+                    onChangeText={(text) => descDispatch({ type: 'REGEN_PROMPT_CHANGE', prompt: text })}
                     placeholder={'补充说明（可选，如\u201c这是我的朋友小李\u201d）'}
                     placeholderTextColor="#A0A0A0"
                   />
