@@ -1,4 +1,4 @@
-import { Fragment, ReportContent, computeWeekKey } from '../../db/schema';
+import { Fragment, ReportContent, ReportContentSchema, computeWeekKey } from '../../db/schema';
 import { Repository } from '../../db/repository';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts';
 import { callHunyuan, TEXT_MODEL, AIError } from './client';
@@ -67,9 +67,13 @@ export async function generateWeeklyReport(
   const latestReport = await repo.getLatestReport();
   if (latestReport) {
     try {
-      const prevContent = JSON.parse(latestReport.content) as ReportContent;
-      previousSummary = `**快照**：${prevContent.snapshot.summary}\n**情绪色彩**：${prevContent.snapshot.mood_palette.join('、')}`;
-    } catch {}
+      const parsed = ReportContentSchema.safeParse(JSON.parse(latestReport.content));
+      if (parsed.success) {
+        previousSummary = `上周摘要：${parsed.data.snapshot?.summary ?? ''}`;
+      }
+    } catch (e) {
+      console.warn('[generateWeeklyReport] Could not parse previous report:', e);
+    }
   }
 
   const apiKey = await repo.getApiKey();

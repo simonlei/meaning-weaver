@@ -14,11 +14,13 @@ jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 // Mock expo-file-system new API
 const mockFileDelete = jest.fn();
 const mockFileExists = jest.fn().mockReturnValue(true);
+const mockPaths = { document: 'file:///mock/documents', cache: 'file:///mock/cache' };
 jest.mock('expo-file-system', () => ({
   File: jest.fn().mockImplementation(() => ({
     get exists() { return mockFileExists(); },
     delete: mockFileDelete,
   })),
+  Paths: mockPaths,
 }));
 
 describe('Migration v3 — photo_uri 列', () => {
@@ -35,6 +37,7 @@ describe('Migration v3 — photo_uri 列', () => {
         get exists() { return mockFileExists(); },
         delete: mockFileDelete,
       })),
+      Paths: mockPaths,
     }));
 
     const sqlite = require('expo-sqlite');
@@ -86,7 +89,7 @@ describe('Migration v3 — photo_uri 列', () => {
 
   it('deleteFragment 含照片时调用 file.delete()', async () => {
     const repo = new SQLiteRepository(db);
-    const fragment = await repo.insertFragment('有照片', 'file:///photos/img003.jpg');
+    const fragment = await repo.insertFragment('有照片', 'file:///mock/documents/img003.jpg');
     await repo.deleteFragment(fragment.id);
     expect(mockFileDelete).toHaveBeenCalled();
   });
@@ -101,7 +104,7 @@ describe('Migration v3 — photo_uri 列', () => {
   it('deleteFragment 文件不存在时静默成功（idempotent）', async () => {
     mockFileDelete.mockImplementationOnce(() => { throw new Error('File not found'); });
     const repo = new SQLiteRepository(db);
-    const fragment = await repo.insertFragment('有照片', 'file:///photos/gone.jpg');
+    const fragment = await repo.insertFragment('有照片', 'file:///mock/documents/gone.jpg');
     // Should NOT throw
     await expect(repo.deleteFragment(fragment.id)).resolves.toBeUndefined();
   });
@@ -119,6 +122,7 @@ describe('WebRepository — photo_uri 支持', () => {
         get exists() { return mockFileExists(); },
         delete: mockFileDelete,
       })),
+      Paths: mockPaths,
     }));
 
     const store: Record<string, string> = {};

@@ -33,11 +33,11 @@ const VALID_REPORT_CONTENT = {
 };
 
 function makeTextFragment(id: string, content: string, createdAt = Date.now()): Fragment {
-  return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: null };
+  return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: null, photo_description: null, audio_uri: null };
 }
 
 function makePhotoFragment(id: string, photoUri: string, content = '', photoDescription?: string, createdAt = Date.now()): Fragment {
-  return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: photoUri, photo_description: photoDescription ?? null };
+  return { id, content, created_at: createdAt, week_key: '2026-W13', photo_uri: photoUri, photo_description: photoDescription ?? null, audio_uri: null };
 }
 
 function makeRepo(fragments: Fragment[], apiKey = 'real-key') {

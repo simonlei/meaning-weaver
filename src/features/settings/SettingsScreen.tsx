@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,8 @@ export function SettingsScreen() {
   const saveApiKey = useSaveApiKey();
   const [inputKey, setInputKey] = useState('');
   const [showSaved, setShowSaved] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const { data: asrCreds, isLoading: asrLoading } = useAsrCredentials();
   const saveAsrCredentials = useSaveAsrCredentials();
@@ -39,7 +41,8 @@ export function SettingsScreen() {
       onSuccess: () => {
         setInputKey('');
         setShowSaved(true);
-        setTimeout(() => setShowSaved(false), 2000);
+        clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => setShowSaved(false), 2000);
       },
     });
   };
@@ -50,7 +53,7 @@ export function SettingsScreen() {
       {
         text: '清除',
         style: 'destructive',
-        onPress: () => saveApiKey.mutate(''),
+        onPress: () => saveApiKey.mutate(null),
       },
     ]);
   };

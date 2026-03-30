@@ -54,18 +54,6 @@ export function useCreateFragment() {
   });
 }
 
-export function useUpdatePhotoDescription() {
-  const { repo } = useDatabase();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, description }: { id: string; description: string }) =>
-      repo!.updateFragmentPhotoDescription(id, description),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: fragmentKeys.all });
-    },
-  });
-}
-
 export function useDeleteFragment() {
   const { repo } = useDatabase();
   const qc = useQueryClient();
