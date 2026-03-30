@@ -111,6 +111,6 @@ describe('SQLite migration user_version', () => {
     await mod.runMigrations(db);
 
     const row = await db.getFirstAsync('PRAGMA user_version');
-    expect(row?.user_version).toBe(3);
+    expect(row?.user_version).toBe(4);
   });
 });

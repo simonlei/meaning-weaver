@@ -1,5 +1,8 @@
 module.exports = {
   testEnvironment: 'node',
+  globals: {
+    __DEV__: true,
+  },
   transform: {
     '^.+\\.[jt]sx?$': [
       'babel-jest',
@@ -16,6 +19,8 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^expo-sqlite$': '<rootDir>/__mocks__/expo-sqlite.js',
+    '^expo-audio$': '<rootDir>/__mocks__/expo-audio.js',
+    '^react-native$': '<rootDir>/__mocks__/react-native.js',
     '^expo/src/winter/(.*)$': '<rootDir>/__mocks__/expo-winter-runtime.js',
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],

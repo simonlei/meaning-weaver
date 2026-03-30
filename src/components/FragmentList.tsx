@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,13 @@ import {
   FlatList,
   Image,
   Alert,
+  Platform,
 } from 'react-native';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import * as FileSystem from 'expo-file-system';
 import { Fragment } from '../db/schema';
 import { useRecentFragments, useDeleteFragment } from '../hooks/useFragments';
+import { AudioPlayerProvider, useAudioPlayerContext } from '../contexts/AudioPlayerContext';
 
 function formatTime(timestamp: number): string {
   const date = new Date(timestamp);
@@ -35,6 +39,95 @@ function formatTime(timestamp: number): string {
   return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
 }
 
+function formatDuration(ms: number): string {
+  const totalSecs = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+/** Audio playback component — only rendered on native when audio_uri is present */
+function AudioPlayButton({ fragmentId, audioUri }: { fragmentId: string; audioUri: string }) {
+  const [audioExists, setAudioExists] = useState<boolean | null>(null); // null = checking
+  const { playingId, setPlayingId, registerStopCallback, unregisterStopCallback } = useAudioPlayerContext();
+  const isPlaying = playingId === fragmentId;
+
+  const player = useAudioPlayer(isPlaying ? audioUri : null);
+  const status = useAudioPlayerStatus(player);
+
+  // Register a stop callback so AudioPlayerContext can stop us
+  useEffect(() => {
+    registerStopCallback(fragmentId, () => {
+      player.pause();
+    });
+    return () => {
+      unregisterStopCallback(fragmentId);
+      player.remove();
+    };
+  }, [fragmentId, player, registerStopCallback, unregisterStopCallback]);
+
+  // Check if file exists on mount
+  useEffect(() => {
+    FileSystem.getInfoAsync(audioUri)
+      .then((info) => setAudioExists(info.exists))
+      .catch(() => setAudioExists(false));
+  }, [audioUri]);
+
+  // When playback ends naturally, reset context
+  useEffect(() => {
+    if (status && !status.playing && isPlaying && (status.currentTime ?? 0) > 0) {
+      const dur = status.duration ?? 0;
+      const cur = status.currentTime ?? 0;
+      // Detect end of track (within 0.5s of duration)
+      if (dur > 0 && Math.abs(cur - dur) < 0.5) {
+        setPlayingId(null);
+      }
+    }
+  }, [status, isPlaying, setPlayingId]);
+
+  if (audioExists === false) {
+    // File missing — don't render button
+    return null;
+  }
+
+  if (audioExists === null) {
+    // Still checking
+    return null;
+  }
+
+  const handlePress = () => {
+    if (isPlaying) {
+      player.pause();
+      setPlayingId(null);
+    } else {
+      setPlayingId(fragmentId);
+      player.play();
+    }
+  };
+
+  const currentTime = status?.currentTime ?? 0;
+  const duration = status?.duration ?? 0;
+  const progress = duration > 0 ? currentTime / duration : 0;
+
+  return (
+    <View style={audioStyles.container}>
+      <TouchableOpacity onPress={handlePress} style={audioStyles.button}>
+        <Text style={audioStyles.buttonText}>{isPlaying ? '⏸' : '▶'}</Text>
+      </TouchableOpacity>
+      {isPlaying && duration > 0 && (
+        <View style={audioStyles.progressRow}>
+          <View style={audioStyles.progressTrack}>
+            <View style={[audioStyles.progressFill, { width: `${Math.min(progress * 100, 100)}%` }]} />
+          </View>
+          <Text style={audioStyles.progressTime}>
+            {formatDuration(currentTime * 1000)} / {formatDuration(duration * 1000)}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function FragmentItem({ fragment }: { fragment: Fragment }) {
   const deleteFragment = useDeleteFragment();
 
@@ -55,6 +148,7 @@ function FragmentItem({ fragment }: { fragment: Fragment }) {
 
   const hasText = fragment.content.trim().length > 0;
   const hasPhoto = !!fragment.photo_uri;
+  const hasAudio = !!fragment.audio_uri;
 
   return (
     <TouchableOpacity onLongPress={handleLongPress} activeOpacity={0.7}>
@@ -69,8 +163,15 @@ function FragmentItem({ fragment }: { fragment: Fragment }) {
         {hasText && (
           <Text style={styles.content}>{fragment.content}</Text>
         )}
-        {!hasText && !hasPhoto && (
+        {!hasText && !hasPhoto && !hasAudio && (
           <Text style={[styles.content, styles.placeholder]}>（照片）</Text>
+        )}
+        {!hasText && !hasPhoto && hasAudio && (
+          <Text style={[styles.content, styles.placeholder]}>（语音记录）</Text>
+        )}
+        {/* Audio playback — native only */}
+        {hasAudio && Platform.OS !== 'web' && (
+          <AudioPlayButton fragmentId={fragment.id} audioUri={fragment.audio_uri!} />
         )}
         <Text style={styles.time}>{formatTime(fragment.created_at)}</Text>
       </View>
@@ -109,12 +210,14 @@ export function FragmentList() {
   }
 
   return (
-    <FlatList
-      data={fragments}
-      renderItem={renderItem}
-      keyExtractor={(item) => item.id}
-      contentContainerStyle={styles.list}
-    />
+    <AudioPlayerProvider>
+      <FlatList
+        data={fragments}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+      />
+    </AudioPlayerProvider>
   );
 }
 
@@ -175,5 +278,49 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     lineHeight: 22,
+  },
+});
+
+const audioStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  button: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0EBE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buttonText: {
+    fontSize: 14,
+  },
+  progressRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#E5E5E5',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#6B5B4F',
+    borderRadius: 2,
+  },
+  progressTime: {
+    fontSize: 11,
+    color: '#999',
+    minWidth: 70,
+    textAlign: 'right',
   },
 });

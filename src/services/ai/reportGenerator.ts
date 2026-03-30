@@ -14,8 +14,13 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
     return `${d.getMonth() + 1}月${d.getDate()}日`;
   }));
 
-  // 空 content 时（照片专用碎片）使用占位文本
-  const safeContent = (content: string) => content.trim() || '[照片]';
+  // 空 content 时根据媒体类型使用占位文本
+  const safeContent = (f: Fragment) => {
+    if (f.content.trim()) return f.content.trim();
+    if (f.audio_uri) return '[语音]';
+    if (f.photo_uri) return '[照片]';
+    return '[记录]';
+  };
 
   return {
     version: 1,
@@ -28,13 +33,13 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
       recurring_themes: [
         {
           theme: '记录本身',
-          evidence: [safeContent(fragments[0]?.content ?? '').slice(0, 50)],
+          evidence: [safeContent(fragments[0] ?? { content: '', audio_uri: null, photo_uri: null } as any).slice(0, 50)],
           insight: '你选择记录，这本身就是一种关注自己的方式。',
         },
       ],
     },
     notable_moments: fragments.slice(0, 2).map((f) => ({
-      moment: safeContent(f.content).slice(0, 100),
+      moment: safeContent(f).slice(0, 100),
       why_it_matters: '每一个被记录下来的瞬间，都值得被看见。',
     })),
     growth_trajectory: {
