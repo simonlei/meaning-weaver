@@ -7,7 +7,7 @@
 
 import { runMigrations, SQLiteRepository } from '../src/db/repository';
 
-// expo-file-system is mocked via __mocks__/expo-file-system.js (already exists)
+// expo-file-system is mocked via __mocks__/expo-file-system.js
 // expo-sqlite is mocked via __mocks__/expo-sqlite.js
 const { openDatabaseAsync } = require('expo-sqlite');
 const FileSystem = require('expo-file-system');
@@ -26,7 +26,6 @@ describe('SQLiteRepository – audio_uri support', () => {
 
   describe('migration v4', () => {
     it('adds audio_uri column to fragments table', async () => {
-      // Check the column exists via the mock's _columns tracking
       expect(db._columns['fragments'].has('audio_uri')).toBe(true);
     });
 
@@ -85,10 +84,8 @@ describe('SQLiteRepository – audio_uri support', () => {
 
       await repo.deleteFragment(fragment.id);
 
-      expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
-        'file:///audio/voice.m4a',
-        { idempotent: true }
-      );
+      expect(FileSystem.__mockFileDelete).toHaveBeenCalled();
+      expect(FileSystem.File).toHaveBeenCalledWith('file:///audio/voice.m4a');
     });
 
     it('deletes both photo and audio files when both are present', async () => {
@@ -109,17 +106,12 @@ describe('SQLiteRepository – audio_uri support', () => {
 
       await repo.deleteFragment(fragment.id);
 
-      expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
-        'file:///photos/photo.jpg',
-        { idempotent: true }
-      );
-      expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
-        'file:///audio/audio.m4a',
-        { idempotent: true }
-      );
+      expect(FileSystem.File).toHaveBeenCalledWith('file:///photos/photo.jpg');
+      expect(FileSystem.File).toHaveBeenCalledWith('file:///audio/audio.m4a');
+      expect(FileSystem.__mockFileDelete).toHaveBeenCalledTimes(2);
     });
 
-    it('does not throw when audio file is already missing', async () => {
+    it('does not throw when audio file delete throws', async () => {
       const fragment = await repo.insertFragment(
         'Voice fragment',
         undefined,
@@ -133,10 +125,9 @@ describe('SQLiteRepository – audio_uri support', () => {
         }
       });
 
-      // Make FileSystem.deleteAsync throw to simulate missing file
-      (FileSystem.deleteAsync as jest.Mock).mockRejectedValueOnce(
-        new Error('File not found')
-      );
+      FileSystem.__mockFileDelete.mockImplementationOnce(() => {
+        throw new Error('File not found');
+      });
 
       await expect(repo.deleteFragment(fragment.id)).resolves.not.toThrow();
     });
@@ -155,9 +146,9 @@ describe('SQLiteRepository – audio_uri support', () => {
         }
       });
 
-      (FileSystem.deleteAsync as jest.Mock).mockRejectedValueOnce(
-        new Error('Disk error')
-      );
+      FileSystem.__mockFileDelete.mockImplementationOnce(() => {
+        throw new Error('Disk error');
+      });
 
       await repo.deleteFragment(fragment.id);
 

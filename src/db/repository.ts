@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 import { Fragment, Report, ReportContent, computeWeekKey } from './schema';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 
 // Abstract interface - works on both web (memory) and native (SQLite)
 export interface Repository {
@@ -225,14 +225,14 @@ export class SQLiteRepository implements Repository {
     );
     if (row?.photo_uri) {
       try {
-        await FileSystem.deleteAsync(row.photo_uri, { idempotent: true });
+        new File(row.photo_uri).delete();
       } catch {
         // File already gone — ignore
       }
     }
     if (row?.audio_uri) {
       try {
-        await FileSystem.deleteAsync(row.audio_uri, { idempotent: true });
+        new File(row.audio_uri).delete();
       } catch {
         // File already gone — ignore
       }

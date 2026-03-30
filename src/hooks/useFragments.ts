@@ -1,7 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDatabase } from './useDatabase';
-import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
 
 export const fragmentKeys = {
   all: ['fragments'] as const,

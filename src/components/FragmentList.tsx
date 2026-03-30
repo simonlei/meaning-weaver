@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { Fragment } from '../db/schema';
 import { useRecentFragments, useDeleteFragment } from '../hooks/useFragments';
 import { AudioPlayerProvider, useAudioPlayerContext } from '../contexts/AudioPlayerContext';
@@ -66,11 +66,12 @@ function AudioPlayButton({ fragmentId, audioUri }: { fragmentId: string; audioUr
     };
   }, [fragmentId, player, registerStopCallback, unregisterStopCallback]);
 
-  // Check if file exists on mount
   useEffect(() => {
-    FileSystem.getInfoAsync(audioUri)
-      .then((info) => setAudioExists(info.exists))
-      .catch(() => setAudioExists(false));
+    try {
+      setAudioExists(new File(audioUri).exists);
+    } catch {
+      setAudioExists(false);
+    }
   }, [audioUri]);
 
   // When playback ends naturally, reset context

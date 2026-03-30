@@ -3,7 +3,7 @@
  * Calls the local proxy server /api/transcribe which handles
  * TC3-HMAC-SHA256 signing and forwarding to Tencent Cloud SentenceRecognition.
  */
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { Result, Ok, Err } from '../../lib/result';
 import { AIError } from '../ai/client';
@@ -35,16 +35,15 @@ export async function transcribeAudio(
   credentials: AsrCredentials
 ): Promise<Result<string, AIError>> {
   try {
-    // Read audio file as base64
-    const base64Audio = await FileSystem.readAsStringAsync(localUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    const audioFile = new File(localUri);
 
-    // Get file info to determine size
-    const fileInfo = await FileSystem.getInfoAsync(localUri);
-    if (!fileInfo.exists) {
+    // Check file exists
+    if (!audioFile.exists) {
       return Err({ kind: 'network', message: '音频文件不存在' });
     }
+
+    // Read audio file as base64
+    const base64Audio = await audioFile.base64();
 
     const ASR_URL = getAsrProxyUrl();
 

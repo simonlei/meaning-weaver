@@ -18,8 +18,8 @@ describe('transcribeAudio', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Default: file exists, base64 read succeeds
-    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValue({ exists: true, size: 50000 });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue('AAAABASE64AUDIO==');
+    FileSystem.__mockFileExists.mockReturnValue(true);
+    FileSystem.__mockFileBase64.mockResolvedValue('AAAABASE64AUDIO==');
   });
 
   it('returns Ok with transcribed text on success', async () => {
@@ -120,7 +120,7 @@ describe('transcribeAudio', () => {
   });
 
   it('returns Err with network kind when audio file does not exist', async () => {
-    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValue({ exists: false });
+    FileSystem.__mockFileExists.mockReturnValue(false);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
 

@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '../../lib/result';
-import { AIError, callHunyuan, VISION_MODEL } from './client';
+import { AIError, VISION_MODEL } from './client';
 import { PHOTO_DESCRIPTION_SYSTEM_PROMPT, buildPhotoDescriptionContent } from './prompts';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 /**
@@ -15,9 +15,7 @@ export async function compressAndReadBase64(photoUri: string): Promise<string | 
       [{ resize: { width: 1280 } }],
       { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
     );
-    const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    const base64 = await new File(compressed.uri).base64();
     return `data:image/jpeg;base64,${base64}`;
   } catch {
     return null;

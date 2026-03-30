@@ -11,10 +11,14 @@ jest.mock('react-native', () => ({
 
 jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
-// Mock expo-file-system
-const mockDeleteAsync = jest.fn().mockResolvedValue(undefined);
+// Mock expo-file-system new API
+const mockFileDelete = jest.fn();
+const mockFileExists = jest.fn().mockReturnValue(true);
 jest.mock('expo-file-system', () => ({
-  deleteAsync: mockDeleteAsync,
+  File: jest.fn().mockImplementation(() => ({
+    get exists() { return mockFileExists(); },
+    delete: mockFileDelete,
+  })),
 }));
 
 describe('Migration v3 — photo_uri 列', () => {
@@ -26,7 +30,12 @@ describe('Migration v3 — photo_uri 列', () => {
     jest.resetModules();
     jest.mock('react-native', () => ({ Platform: { OS: 'native' } }));
     jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
-    jest.mock('expo-file-system', () => ({ deleteAsync: mockDeleteAsync }));
+    jest.mock('expo-file-system', () => ({
+      File: jest.fn().mockImplementation(() => ({
+        get exists() { return mockFileExists(); },
+        delete: mockFileDelete,
+      })),
+    }));
 
     const sqlite = require('expo-sqlite');
     db = await sqlite.openDatabaseAsync('test-photo.db');
@@ -37,7 +46,8 @@ describe('Migration v3 — photo_uri 列', () => {
   });
 
   afterEach(() => {
-    mockDeleteAsync.mockClear();
+    mockFileDelete.mockClear();
+    mockFileExists.mockReturnValue(true);
   });
 
   it('migration 后 user_version 应为 4', async () => {
@@ -74,22 +84,22 @@ describe('Migration v3 — photo_uri 列', () => {
     expect(fragment.photo_uri).toBe('file:///photos/img002.jpg');
   });
 
-  it('deleteFragment 含照片时调用 FileSystem.deleteAsync', async () => {
+  it('deleteFragment 含照片时调用 file.delete()', async () => {
     const repo = new SQLiteRepository(db);
     const fragment = await repo.insertFragment('有照片', 'file:///photos/img003.jpg');
     await repo.deleteFragment(fragment.id);
-    expect(mockDeleteAsync).toHaveBeenCalledWith('file:///photos/img003.jpg', { idempotent: true });
+    expect(mockFileDelete).toHaveBeenCalled();
   });
 
-  it('deleteFragment 无照片时不调用 FileSystem.deleteAsync', async () => {
+  it('deleteFragment 无照片时不调用 file.delete()', async () => {
     const repo = new SQLiteRepository(db);
     const fragment = await repo.insertFragment('纯文字');
     await repo.deleteFragment(fragment.id);
-    expect(mockDeleteAsync).not.toHaveBeenCalled();
+    expect(mockFileDelete).not.toHaveBeenCalled();
   });
 
   it('deleteFragment 文件不存在时静默成功（idempotent）', async () => {
-    mockDeleteAsync.mockRejectedValueOnce(new Error('File not found'));
+    mockFileDelete.mockImplementationOnce(() => { throw new Error('File not found'); });
     const repo = new SQLiteRepository(db);
     const fragment = await repo.insertFragment('有照片', 'file:///photos/gone.jpg');
     // Should NOT throw
@@ -104,7 +114,12 @@ describe('WebRepository — photo_uri 支持', () => {
     jest.resetModules();
     jest.mock('react-native', () => ({ Platform: { OS: 'web' } }));
     jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
-    jest.mock('expo-file-system', () => ({ deleteAsync: mockDeleteAsync }));
+    jest.mock('expo-file-system', () => ({
+      File: jest.fn().mockImplementation(() => ({
+        get exists() { return mockFileExists(); },
+        delete: mockFileDelete,
+      })),
+    }));
 
     const store: Record<string, string> = {};
     global.localStorage = {
@@ -117,7 +132,7 @@ describe('WebRepository — photo_uri 支持', () => {
     WebRepository = mod.WebRepository;
   });
 
-  afterEach(() => mockDeleteAsync.mockClear());
+  afterEach(() => mockFileDelete.mockClear());
 
   it('insertFragment 不传 photoUri 时 photo_uri 为 null', async () => {
     const repo = new WebRepository();
@@ -131,11 +146,11 @@ describe('WebRepository — photo_uri 支持', () => {
     expect(f.photo_uri).toBe('file:///web/path.jpg');
   });
 
-  it('deleteFragment 在 web 平台不调用 FileSystem.deleteAsync', async () => {
+  it('deleteFragment 在 web 平台不调用 file.delete()', async () => {
     const repo = new WebRepository();
     const f = await repo.insertFragment('hello', 'file:///web/path.jpg');
     await repo.deleteFragment(f.id);
     // web 平台无本地文件系统，不应调用
-    expect(mockDeleteAsync).not.toHaveBeenCalled();
+    expect(mockFileDelete).not.toHaveBeenCalled();
   });
 });

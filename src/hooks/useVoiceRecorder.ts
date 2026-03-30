@@ -13,7 +13,7 @@ import {
   AudioQuality,
   IOSOutputFormat,
 } from 'expo-audio';
-import * as FileSystem from 'expo-file-system';
+import { Directory, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 /** Custom recording options optimised for Tencent ASR (16k_zh engine) */
@@ -84,10 +84,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     });
 
     // Ensure audio directory exists
-    const audioDir = FileSystem.documentDirectory + 'audio/';
-    const dirInfo = await FileSystem.getInfoAsync(audioDir);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(audioDir, { intermediates: true });
+    const audioDir = new Directory(Paths.document, 'audio');
+    if (!audioDir.exists) {
+      audioDir.create();
     }
 
     await recorder.prepareToRecordAsync();

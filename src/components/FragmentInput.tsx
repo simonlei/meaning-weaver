@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { useCreateFragment } from '../hooks/useFragments';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import { useAsrCredentials, useApiKey } from '../hooks/useSettings';
@@ -169,7 +169,7 @@ export function FragmentInput() {
             {
               text: '丢弃',
               style: 'destructive',
-              onPress: () => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}),
+              onPress: () => { try { new File(uri).delete(); } catch {} },
             },
           ]
         );
@@ -200,7 +200,7 @@ export function FragmentInput() {
               text: '丢弃',
               style: 'destructive',
               onPress: () => {
-                FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+                try { new File(uri).delete(); } catch {}
                 setAudioUri(null);
                 setAudioDurationMs(0);
               },
@@ -234,7 +234,7 @@ export function FragmentInput() {
 
   const handleRemoveAudio = () => {
     if (audioUri) {
-      FileSystem.deleteAsync(audioUri, { idempotent: true }).catch(() => {});
+      try { new File(audioUri).delete(); } catch {}
     }
     setAudioUri(null);
     setAudioDurationMs(0);
