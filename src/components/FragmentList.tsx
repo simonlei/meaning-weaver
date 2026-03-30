@@ -160,6 +160,9 @@ function FragmentItem({ fragment }: { fragment: Fragment }) {
             resizeMode="cover"
           />
         )}
+        {hasPhoto && fragment.photo_description && (
+          <Text style={styles.photoDescription}>{fragment.photo_description}</Text>
+        )}
         {hasText && (
           <Text style={styles.content}>{fragment.content}</Text>
         )}
@@ -242,6 +245,14 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 8,
     marginBottom: 8,
+  },
+  photoDescription: {
+    fontSize: 13,
+    color: '#777',
+    lineHeight: 19,
+    fontStyle: 'italic',
+    marginBottom: 6,
+    paddingHorizontal: 2,
   },
   content: {
     fontSize: 15,
