@@ -6,7 +6,8 @@ import * as FileSystem from 'expo-file-system';
 // Abstract interface - works on both web (memory) and native (SQLite)
 export interface Repository {
   // Fragments
-  insertFragment(content: string, photoUri?: string, audioUri?: string): Promise<Fragment>;
+  insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment>;
+  updateFragmentPhotoDescription(id: string, description: string): Promise<void>;
   getRecentFragments(limit: number): Promise<Fragment[]>;
   getFragmentsByWeek(weekKey: string): Promise<Fragment[]>;
   getCurrentWeekFragments(): Promise<Fragment[]>;
@@ -55,7 +56,7 @@ export class WebRepository implements Repository {
     localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(this.reports));
   }
 
-  async insertFragment(content: string, photoUri?: string, audioUri?: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
@@ -63,11 +64,20 @@ export class WebRepository implements Repository {
       created_at: now,
       week_key: computeWeekKey(now),
       photo_uri: photoUri ?? null,
+      photo_description: photoDescription ?? null,
       audio_uri: audioUri ?? null,
     };
     this.fragments.unshift(fragment);
     this.saveFragments();
     return fragment;
+  }
+
+  async updateFragmentPhotoDescription(id: string, description: string): Promise<void> {
+    const fragment = this.fragments.find((f) => f.id === id);
+    if (fragment) {
+      fragment.photo_description = description;
+      this.saveFragments();
+    }
   }
 
   async getRecentFragments(limit: number): Promise<Fragment[]> {
@@ -164,7 +174,7 @@ export class SQLiteRepository implements Repository {
     this.db = db;
   }
 
-  async insertFragment(content: string, photoUri?: string, audioUri?: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
@@ -172,11 +182,12 @@ export class SQLiteRepository implements Repository {
       created_at: now,
       week_key: computeWeekKey(now),
       photo_uri: photoUri ?? null,
+      photo_description: photoDescription ?? null,
       audio_uri: audioUri ?? null,
     };
     await this.db.runAsync(
-      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri, audio_uri) VALUES (?, ?, ?, ?, ?, ?)',
-      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri ?? null, fragment.audio_uri ?? null]
+      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri, photo_description, audio_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri ?? null, fragment.photo_description ?? null, fragment.audio_uri ?? null]
     );
     return fragment;
   }
@@ -185,6 +196,13 @@ export class SQLiteRepository implements Repository {
     return this.db.getAllAsync<Fragment>(
       'SELECT * FROM fragments ORDER BY created_at DESC LIMIT ?',
       [limit]
+    );
+  }
+
+  async updateFragmentPhotoDescription(id: string, description: string): Promise<void> {
+    await this.db.runAsync(
+      'UPDATE fragments SET photo_description = ? WHERE id = ?',
+      [description, id]
     );
   }
 
@@ -352,6 +370,11 @@ export async function runMigrations(db: import('expo-sqlite').SQLiteDatabase): P
   if (currentVersion < 4) {
     await db.execAsync('ALTER TABLE fragments ADD COLUMN audio_uri TEXT');
     await db.execAsync('PRAGMA user_version = 4');
+  }
+
+  if (currentVersion < 5) {
+    await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_description TEXT');
+    await db.execAsync('PRAGMA user_version = 5');
   }
 }
 

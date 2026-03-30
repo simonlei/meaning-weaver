@@ -40,6 +40,7 @@ export function useFragmentCount() {
 export type CreateFragmentInput = {
   content: string;
   photoUri?: string;
+  photoDescription?: string;
   audioUri?: string;
 };
 
@@ -47,8 +48,20 @@ export function useCreateFragment() {
   const { repo } = useDatabase();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ content, photoUri, audioUri }: CreateFragmentInput) =>
-      repo!.insertFragment(content, photoUri, audioUri),
+    mutationFn: ({ content, photoUri, photoDescription, audioUri }: CreateFragmentInput) =>
+      repo!.insertFragment(content, photoUri, photoDescription, audioUri),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: fragmentKeys.all });
+    },
+  });
+}
+
+export function useUpdatePhotoDescription() {
+  const { repo } = useDatabase();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, description }: { id: string; description: string }) =>
+      repo!.updateFragmentPhotoDescription(id, description),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fragmentKeys.all });
     },

@@ -1,12 +1,8 @@
 import { Fragment, ReportContent, computeWeekKey } from '../../db/schema';
 import { Repository } from '../../db/repository';
-import { SYSTEM_PROMPT, VISION_SYSTEM_PROMPT, buildUserPrompt, buildVisionUserContent } from './prompts';
-import { callHunyuan, ContentPart, TEXT_MODEL, VISION_MODEL, AIError } from './client';
+import { SYSTEM_PROMPT, buildUserPrompt } from './prompts';
+import { callHunyuan, TEXT_MODEL, AIError } from './client';
 import { Result, Ok, Err } from '../../lib/result';
-import * as FileSystem from 'expo-file-system';
-import * as ImageManipulator from 'expo-image-manipulator';
-
-const MAX_PHOTOS_PER_REPORT = 5;
 
 function createFallbackReport(fragments: Fragment[]): ReportContent {
   const days = new Set(fragments.map((f) => {
@@ -17,6 +13,7 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
   // 空 content 时根据媒体类型使用占位文本
   const safeContent = (f: Fragment) => {
     if (f.content.trim()) return f.content.trim();
+    if (f.photo_description) return f.photo_description.slice(0, 80);
     if (f.audio_uri) return '[语音]';
     if (f.photo_uri) return '[照片]';
     return '[记录]';
@@ -54,26 +51,6 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
   };
 }
 
-/**
- * Compress a photo and return its base64 data URI.
- * Returns null if compression or reading fails — caller skips the image.
- */
-async function compressAndReadBase64(photoUri: string): Promise<string | null> {
-  try {
-    const compressed = await ImageManipulator.manipulateAsync(
-      photoUri,
-      [{ resize: { width: 1280 } }],
-      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-    );
-    const base64 = await FileSystem.readAsStringAsync(compressed.uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    return `data:image/jpeg;base64,${base64}`;
-  } catch {
-    return null;
-  }
-}
-
 export async function generateWeeklyReport(
   repo: Repository,
   weekKey?: string
@@ -97,42 +74,10 @@ export async function generateWeeklyReport(
 
   const apiKey = await repo.getApiKey();
 
-  // Determine if any fragments have photos
-  const photoFragments = fragments
-    .filter((f) => f.photo_uri != null)
-    .sort((a, b) => b.created_at - a.created_at); // newest first for the 5-limit
-  const hasPhotos = photoFragments.length > 0;
-
-  let userContent: string | ContentPart[];
-  let model: string;
-  let systemPrompt: string;
-
-  if (!hasPhotos) {
-    // Text-only path: cheaper model
-    userContent = buildUserPrompt(fragments, previousSummary);
-    model = TEXT_MODEL;
-    systemPrompt = SYSTEM_PROMPT;
-  } else {
-    // Vision path: compress top-N photos and build multimodal content
-    model = VISION_MODEL;
-    systemPrompt = VISION_SYSTEM_PROMPT;
-
-    // Only include base64 for up to MAX_PHOTOS_PER_REPORT photos (by newest)
-    const photoUrisForVision = photoFragments
-      .slice(0, MAX_PHOTOS_PER_REPORT)
-      .map((f) => f.photo_uri!);
-
-    // Compress and read base64 for eligible photos
-    const base64Map = new Map<string, string>();
-    for (const uri of photoUrisForVision) {
-      const b64 = await compressAndReadBase64(uri);
-      if (b64) base64Map.set(uri, b64);
-    }
-
-    userContent = buildVisionUserContent(fragments, base64Map, previousSummary);
-  }
-
-  const result = await callHunyuan(apiKey, systemPrompt, userContent, model);
+  // All fragments (including those with photo_description) go through text path.
+  // photo_description is embedded as [图片描述：...] inside buildUserPrompt.
+  const userContent = buildUserPrompt(fragments, previousSummary);
+  const result = await callHunyuan(apiKey, SYSTEM_PROMPT, userContent, TEXT_MODEL);
 
   // no_api_key 直接冒泡，不降级也不存报告，让调用方（UI）处理跳转逻辑
   if (!result.ok && result.error.kind === 'no_api_key') {
@@ -152,7 +97,7 @@ export async function generateWeeklyReport(
     targetWeek,
     reportContent,
     fragments.map((f) => f.id),
-    result.ok ? model : 'local-fallback'
+    result.ok ? TEXT_MODEL : 'local-fallback'
   );
 
   return Ok(reportContent);
