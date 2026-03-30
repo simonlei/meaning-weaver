@@ -94,7 +94,7 @@ describe('SQLiteRepository – audio_uri support', () => {
     it('deletes both photo and audio files when both are present', async () => {
       const fragment = await repo.insertFragment(
         'Both media',
-        'file:///photos/photo.jpg',
+        'file:///mock/documents/photo.jpg',
         undefined,
         'file:///audio/audio.m4a'
       );
@@ -102,7 +102,7 @@ describe('SQLiteRepository – audio_uri support', () => {
       // Update mock table to reflect stored uris
       db._tables['fragments'].forEach((row: any) => {
         if (row.id === fragment.id) {
-          row.photo_uri = 'file:///photos/photo.jpg';
+          row.photo_uri = 'file:///mock/documents/photo.jpg';
           row.audio_uri = 'file:///audio/audio.m4a';
         }
       });
@@ -110,7 +110,7 @@ describe('SQLiteRepository – audio_uri support', () => {
       await repo.deleteFragment(fragment.id);
 
       expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
-        'file:///photos/photo.jpg',
+        'file:///mock/documents/photo.jpg',
         { idempotent: true }
       );
       expect(FileSystem.deleteAsync).toHaveBeenCalledWith(

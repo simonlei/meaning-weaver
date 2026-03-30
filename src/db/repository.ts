@@ -7,7 +7,6 @@ import * as FileSystem from 'expo-file-system';
 export interface Repository {
   // Fragments
   insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment>;
-  updateFragmentPhotoDescription(id: string, description: string): Promise<void>;
   getRecentFragments(limit: number): Promise<Fragment[]>;
   getFragmentsByWeek(weekKey: string): Promise<Fragment[]>;
   getCurrentWeekFragments(): Promise<Fragment[]>;
@@ -20,7 +19,7 @@ export interface Repository {
   getLatestReport(): Promise<Report | null>;
   // Settings
   getApiKey(): Promise<string | null>;
-  setApiKey(key: string): Promise<void>;
+  setApiKey(key: string | null): Promise<void>;
   getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null>;
   setAsrCredentials(secretId: string, secretKey: string): Promise<void>;
 }
@@ -70,14 +69,6 @@ export class WebRepository implements Repository {
     this.fragments.unshift(fragment);
     this.saveFragments();
     return fragment;
-  }
-
-  async updateFragmentPhotoDescription(id: string, description: string): Promise<void> {
-    const fragment = this.fragments.find((f) => f.id === id);
-    if (fragment) {
-      fragment.photo_description = description;
-      this.saveFragments();
-    }
   }
 
   async getRecentFragments(limit: number): Promise<Fragment[]> {
@@ -140,7 +131,7 @@ export class WebRepository implements Repository {
     return raw || null;
   }
 
-  async setApiKey(key: string): Promise<void> {
+  async setApiKey(key: string | null): Promise<void> {
     if (!key) {
       localStorage.removeItem(STORAGE_KEY_API_KEY);
     } else {
@@ -166,6 +157,16 @@ export class WebRepository implements Repository {
   }
 }
 
+// ===== URI safety helper (native only) =====
+function isSafePhotoUri(uri: string): boolean {
+  const docDir = FileSystem.documentDirectory ?? '';
+  const cacheDir = FileSystem.cacheDirectory ?? '';
+  return (
+    uri.startsWith('file://') &&
+    (uri.startsWith(docDir) || uri.startsWith(cacheDir))
+  );
+}
+
 // ===== SQLite implementation (Native) =====
 export class SQLiteRepository implements Repository {
   private db: import('expo-sqlite').SQLiteDatabase;
@@ -187,7 +188,7 @@ export class SQLiteRepository implements Repository {
     };
     await this.db.runAsync(
       'INSERT INTO fragments (id, content, created_at, week_key, photo_uri, photo_description, audio_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri ?? null, fragment.photo_description ?? null, fragment.audio_uri ?? null]
+      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri, fragment.photo_description, fragment.audio_uri]
     );
     return fragment;
   }
@@ -196,13 +197,6 @@ export class SQLiteRepository implements Repository {
     return this.db.getAllAsync<Fragment>(
       'SELECT * FROM fragments ORDER BY created_at DESC LIMIT ?',
       [limit]
-    );
-  }
-
-  async updateFragmentPhotoDescription(id: string, description: string): Promise<void> {
-    await this.db.runAsync(
-      'UPDATE fragments SET photo_description = ? WHERE id = ?',
-      [description, id]
     );
   }
 
@@ -224,10 +218,14 @@ export class SQLiteRepository implements Repository {
       [id]
     );
     if (row?.photo_uri) {
-      try {
-        await FileSystem.deleteAsync(row.photo_uri, { idempotent: true });
-      } catch {
-        // File already gone — ignore
+      if (!isSafePhotoUri(row.photo_uri)) {
+        console.warn('Rejected unsafe photo_uri:', row.photo_uri);
+      } else {
+        try {
+          await FileSystem.deleteAsync(row.photo_uri, { idempotent: true });
+        } catch {
+          // File already gone — ignore
+        }
       }
     }
     if (row?.audio_uri) {
@@ -293,7 +291,7 @@ export class SQLiteRepository implements Repository {
     return row?.value ?? null;
   }
 
-  async setApiKey(key: string): Promise<void> {
+  async setApiKey(key: string | null): Promise<void> {
     if (!key) {
       await this.db.runAsync('DELETE FROM settings WHERE key = ?', ['api_key']);
     } else {
@@ -342,39 +340,49 @@ export async function runMigrations(db: import('expo-sqlite').SQLiteDatabase): P
   const currentVersion = result?.user_version ?? 0;
 
   if (currentVersion < 1) {
-    await db.execAsync(`CREATE TABLE IF NOT EXISTS fragments (
-      id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL, week_key TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_fragments_created ON fragments(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_fragments_week ON fragments(week_key);
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY, week_key TEXT NOT NULL UNIQUE, content TEXT NOT NULL,
-      fragment_ids TEXT NOT NULL, model_version TEXT, generated_at INTEGER NOT NULL
-    );`);
-    await db.execAsync('PRAGMA user_version = 1');
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`CREATE TABLE IF NOT EXISTS fragments (
+        id TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL, week_key TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_fragments_created ON fragments(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_fragments_week ON fragments(week_key);
+      CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY, week_key TEXT NOT NULL UNIQUE, content TEXT NOT NULL,
+        fragment_ids TEXT NOT NULL, model_version TEXT, generated_at INTEGER NOT NULL
+      );`);
+      await db.execAsync('PRAGMA user_version = 1');
+    });
   }
 
   if (currentVersion < 2) {
-    await db.execAsync(`CREATE TABLE IF NOT EXISTS settings (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );`);
-    await db.execAsync('PRAGMA user_version = 2');
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );`);
+      await db.execAsync('PRAGMA user_version = 2');
+    });
   }
 
   if (currentVersion < 3) {
-    await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_uri TEXT');
-    await db.execAsync('PRAGMA user_version = 3');
+    await db.withTransactionAsync(async () => {
+      await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_uri TEXT');
+      await db.execAsync('PRAGMA user_version = 3');
+    });
   }
 
   if (currentVersion < 4) {
-    await db.execAsync('ALTER TABLE fragments ADD COLUMN audio_uri TEXT');
-    await db.execAsync('PRAGMA user_version = 4');
+    await db.withTransactionAsync(async () => {
+      await db.execAsync('ALTER TABLE fragments ADD COLUMN audio_uri TEXT');
+      await db.execAsync('PRAGMA user_version = 4');
+    });
   }
 
   if (currentVersion < 5) {
-    await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_description TEXT');
-    await db.execAsync('PRAGMA user_version = 5');
+    await db.withTransactionAsync(async () => {
+      await db.execAsync('ALTER TABLE fragments ADD COLUMN photo_description TEXT');
+      await db.execAsync('PRAGMA user_version = 5');
+    });
   }
 }
 
@@ -383,16 +391,95 @@ async function seedIfEmpty(repo: Repository): Promise<void> {
   const count = await repo.getFragmentCount();
   if (count > 0) return;
 
-  // 只预置几条示例碎片，不预置周报
-  const contents = [
-    '今天在咖啡馆坐了一下午，看着窗外的人来人往。突然意识到自己很久没有这样"什么都不做"了。',
-    '和老朋友打了个电话，聊了快一个小时。挂了电话之后心里暖暖的，但也有点感慨——这样的对话越来越少了。',
-    '在公司楼下散步的时候看到一棵树发了新芽，拍了一张照片。春天真的来了。',
+  const now = Date.now();
+  const DAY = 86400000;
+  const weekKey = computeWeekKey(now);
+
+  // 预置三条示例碎片，分布在本周不同天
+  const seedFragments: Array<{ content: string; createdAt: number }> = [
+    {
+      content: '今天在咖啡馆坐了一下午，看着窗外的人来人往。突然意识到自己很久没有这样"什么都不做"了。',
+      createdAt: now - 3 * DAY,
+    },
+    {
+      content: '和老朋友打了个电话，聊了快一个小时。挂了电话之后心里暖暖的，但也有点感慨——这样的对话越来越少了。',
+      createdAt: now - 2 * DAY,
+    },
+    {
+      content: '在公司楼下散步的时候看到一棵树发了新芽，拍了一张照片。春天真的来了。',
+      createdAt: now - 1 * DAY,
+    },
   ];
 
-  for (const content of contents) {
-    await repo.insertFragment(content);
+  const insertedIds: string[] = [];
+  for (const { content, createdAt } of seedFragments) {
+    // insertFragment uses Date.now() internally; patch created_at afterwards so
+    // seed entries appear naturally spread across the week.
+    const fragment = await repo.insertFragment(content);
+    insertedIds.push(fragment.id);
+    if (repo instanceof SQLiteRepository) {
+      await (repo as SQLiteRepository)['db'].runAsync(
+        'UPDATE fragments SET created_at = ?, week_key = ? WHERE id = ?',
+        [createdAt, weekKey, fragment.id]
+      );
+    }
   }
+
+  // 预置一份示例周报，让用户首次打开即可看到完整产品体验
+  const sampleReport: ReportContent = {
+    version: 1,
+    snapshot: {
+      title: '重新呼吸的一周',
+      summary:
+        '这一周你在不经意间给自己创造了几个"停下来"的瞬间。咖啡馆的下午、老朋友的电话、路边的新芽——它们看似随意，却都指向同一件事：你正在重新学会感受生活中那些微小的温度。',
+      mood_palette: ['平静', '怀旧', '萌芽'],
+    },
+    patterns: {
+      recurring_themes: [
+        {
+          theme: '对"慢"的渴望',
+          evidence: [
+            '在咖啡馆"什么都不做"',
+            '和老朋友打了快一个小时的电话',
+          ],
+          insight:
+            '我注意到你这周有好几次主动让自己慢下来。这不是偷懒，而是你的内心在说——我需要空间。',
+        },
+        {
+          theme: '人与人的连接',
+          evidence: ['和老朋友打了个电话', '心里暖暖的，但也有点感慨'],
+          insight:
+            '那通电话带来的温暖和感慨并存，说明你对真实连接的需求比你以为的更强烈。',
+        },
+      ],
+    },
+    notable_moments: [
+      {
+        moment: '在咖啡馆坐了一下午，"什么都不做"',
+        why_it_matters:
+          '在一个崇尚效率的世界里，你给了自己一个下午的留白。这种勇气比你想象的更珍贵。',
+      },
+      {
+        moment: '看到一棵树发了新芽，拍了照片',
+        why_it_matters:
+          '你选择停下脚步、注意到、记录下来——这说明你正在重新打开感知生活细节的能力。',
+      },
+    ],
+    growth_trajectory: {
+      seeds_planted: ['留白的习惯', '对真实连接的觉察', '对自然的敏感'],
+      gentle_observations:
+        '你可能还没有意识到，但这一周你做了一件很重要的事——你开始允许自己不那么"有用"。这是一种深层的自我接纳。',
+    },
+    gentle_invitation: {
+      reflection_question:
+        '在这一周里，有没有哪个瞬间让你觉得"啊，这才是我想要的生活的样子"？',
+      micro_experiment:
+        '下周试试：选一个工作日的午餐时间，不看手机，只是安静地吃饭，感受食物的味道。',
+      affirmation: '你正在编织的这些碎片，终将成为一幅只属于你的图景。不急，慢慢来。',
+    },
+  };
+
+  await repo.insertReport(weekKey, sampleReport, insertedIds, 'sample');
 }
 
 // ===== Factory =====

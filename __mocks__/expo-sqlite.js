@@ -121,6 +121,10 @@ class InMemoryDatabase {
     return rows;
   }
 
+  async withTransactionAsync(callback) {
+    await callback();
+  }
+
   async runAsync(sql, params = []) {
     // INSERT OR REPLACE INTO table (cols) VALUES (?,?,...)
     const insertMatch = sql.match(/INSERT\s+(?:OR\s+REPLACE\s+)?INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
