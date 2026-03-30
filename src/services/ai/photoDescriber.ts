@@ -9,12 +9,11 @@ import * as ImageManipulator from 'expo-image-manipulator';
  * Returns null if compression or reading fails — caller skips the image.
  */
 function isSafePhotoUri(uri: string): boolean {
-  const docDir = FileSystem.documentDirectory ?? '';
-  const cacheDir = FileSystem.cacheDirectory ?? '';
-  return (
-    uri.startsWith('file://') &&
-    (uri.startsWith(docDir) || uri.startsWith(cacheDir))
-  );
+  // Accept any local file:// URI. ImagePicker provides app-sandboxed paths on
+  // both iOS and Android; restricting to documentDirectory/cacheDirectory is
+  // overly strict and rejects valid gallery URIs (e.g. /storage/emulated/0/…
+  // on Android or /var/mobile/…/tmp/ on iOS).
+  return uri.startsWith('file://');
 }
 
 export async function compressAndReadBase64(photoUri: string): Promise<string | null> {

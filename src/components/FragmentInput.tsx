@@ -73,6 +73,16 @@ export function FragmentInput() {
     !isTranscribing &&
     !isGeneratingDescription;
 
+  function aiErrorMessage(error: import('../services/ai/client').AIError): string {
+    switch (error.kind) {
+      case 'no_api_key':   return 'API Key 未配置，请在设置中填写腾讯云混元密钥。';
+      case 'auth':         return `API Key 无效：${error.message}`;
+      case 'rate_limit':   return '请求过于频繁，请稍后再试。';
+      case 'network':      return `网络错误：${error.message}`;
+      case 'invalid_response': return `AI 返回内容异常：${error.raw}`;
+    }
+  }
+
   const handlePickPhoto = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -99,10 +109,11 @@ export function FragmentInput() {
               descDispatch({ type: 'GENERATE_SUCCESS', description: descResult.value });
             } else {
               descDispatch({ type: 'GENERATE_FAILURE' });
+              Alert.alert('AI 生成描述失败', aiErrorMessage(descResult.error));
             }
-            // On failure: silently skip, user can manually add or regenerate
-          } catch {
+          } catch (e) {
             descDispatch({ type: 'GENERATE_FAILURE' });
+            Alert.alert('AI 生成描述失败', e instanceof Error ? e.message : String(e));
           }
         }
       }
@@ -121,11 +132,11 @@ export function FragmentInput() {
         descDispatch({ type: 'REGEN_SUCCESS', description: descResult.value });
       } else {
         descDispatch({ type: 'GENERATE_FAILURE' });
-        Alert.alert('重新生成失败', '请检查网络或 API Key 后重试。');
+        Alert.alert('重新生成失败', aiErrorMessage(descResult.error));
       }
-    } catch {
+    } catch (e) {
       descDispatch({ type: 'GENERATE_FAILURE' });
-      Alert.alert('重新生成失败', '请检查网络或 API Key 后重试。');
+      Alert.alert('重新生成失败', e instanceof Error ? e.message : String(e));
     }
   };
 
