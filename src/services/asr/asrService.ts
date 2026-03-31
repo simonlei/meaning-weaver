@@ -1,40 +1,34 @@
 /**
  * ASR (Automatic Speech Recognition) service.
- * Calls the local proxy server /api/transcribe which handles
- * TC3-HMAC-SHA256 signing and forwarding to Tencent Cloud SentenceRecognition.
+ * Directly calls Tencent Cloud SentenceRecognition API with
+ * TC3-HMAC-SHA256 signing (via @noble/hashes, no proxy needed).
  */
 import { File } from 'expo-file-system';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 import { Result, Ok, Err } from '../../lib/result';
 import { AIError } from '../ai/client';
+import { buildTencentSignedRequest } from './sign';
 
 export type AsrCredentials = {
   secretId: string;
   secretKey: string;
 };
 
-function getAsrProxyUrl(): string {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:3001/api/transcribe`;
-  }
-  // On native (Android/iOS), derive the dev machine IP from Expo's debuggerHost
-  // (e.g. "192.168.1.100:8081") so the device can reach the proxy server.
-  // In production builds, a real backend URL should be used.
-  const debuggerHost = Constants.expoGoConfig?.debuggerHost
-    ?? Constants.expoConfig?.hostUri;
-  if (debuggerHost) {
-    const hostname = debuggerHost.split(':')[0];
-    return `http://${hostname}:3001/api/transcribe`;
-  }
-  return 'http://localhost:3001/api/transcribe';
+/**
+ * Estimate the raw byte length of a base64-encoded string
+ * (without needing Node.js Buffer).
+ */
+function base64ByteLength(base64: string): number {
+  let padding = 0;
+  if (base64.endsWith('==')) padding = 2;
+  else if (base64.endsWith('=')) padding = 1;
+  return Math.floor((base64.length * 3) / 4) - padding;
 }
 
 /**
- * Transcribe an audio file using Tencent Cloud ASR via the proxy server.
+ * Transcribe an audio file using Tencent Cloud ASR (direct HTTPS call).
  *
  * @param localUri - Local file URI from expo-audio (e.g. file:///data/.../recording.m4a)
- * @param credentials - ASR SecretId + SecretKey (forwarded to proxy)
+ * @param credentials - ASR SecretId + SecretKey
  * @returns Result<string, AIError> with the transcribed text
  */
 export async function transcribeAudio(
@@ -52,41 +46,57 @@ export async function transcribeAudio(
     // Read audio file as base64
     const base64Audio = await audioFile.base64();
 
-    const ASR_URL = getAsrProxyUrl();
+    // Tencent SentenceRecognition payload
+    const payload = {
+      EngSerViceType: '16k_zh',   // Mandarin 16kHz engine
+      SourceType: 1,               // 1 = base64 inline
+      VoiceFormat: 'm4a',
+      Data: base64Audio,
+      DataLen: base64ByteLength(base64Audio),
+      FilterPunc: 0,               // Keep punctuation
+      ConvertNumMode: 1,           // Smart number conversion
+    };
 
-    const response = await fetch(ASR_URL, {
+    const { url, headers } = buildTencentSignedRequest(
+      credentials.secretId,
+      credentials.secretKey,
+      'asr',
+      'SentenceRecognition',
+      '2019-06-14',
+      payload,
+    );
+
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Forward credentials to proxy; proxy handles signing server-side
-        'X-ASR-Secret-Id': credentials.secretId,
-        'X-ASR-Secret-Key': credentials.secretKey,
-      },
-      body: JSON.stringify({
-        audio: base64Audio,
-        format: 'm4a',
-      }),
+      headers,
+      body: JSON.stringify(payload),
     });
 
-    if (response.status === 401 || response.status === 403) {
-      return Err({ kind: 'auth', message: 'ASR 凭证无效，请检查腾讯云 SecretId/SecretKey' });
-    }
-
-    if (response.status === 429) {
-      return Err({ kind: 'rate_limit', retryAfterMs: 60000 });
-    }
-
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return Err({ kind: 'auth', message: 'ASR 凭证无效，请检查腾讯云 SecretId/SecretKey' });
+      }
+      if (response.status === 429) {
+        return Err({ kind: 'rate_limit', retryAfterMs: 60000 });
+      }
       return Err({ kind: 'network', message: `HTTP ${response.status}` });
     }
 
     const data = await response.json();
 
-    if (data.error) {
-      return Err({ kind: 'invalid_response', raw: data.error });
+    // Tencent wraps all errors in Response.Error
+    if (data.Response?.Error) {
+      const { Code, Message } = data.Response.Error;
+      if (Code === 'AuthFailure' || Code.startsWith('AuthFailure.')) {
+        return Err({ kind: 'auth', message: `认证失败: ${Message}` });
+      }
+      if (Code === 'RequestLimitExceeded') {
+        return Err({ kind: 'rate_limit', retryAfterMs: 60000 });
+      }
+      return Err({ kind: 'invalid_response', raw: `${Code}: ${Message}` });
     }
 
-    const text: string = data.text ?? '';
+    const text: string = data.Response?.Result ?? '';
     return Ok(text);
   } catch (err) {
     return Err({

@@ -26,7 +26,7 @@ describe('transcribeAudio', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ text: '今天天气真好啊' }),
+      json: async () => ({ Response: { Result: '今天天气真好啊' } }),
     } as any);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
@@ -37,23 +37,25 @@ describe('transcribeAudio', () => {
     }
   });
 
-  it('sends base64 audio and credentials in request body/headers', async () => {
+  it('calls Tencent ASR API directly with signed headers', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ text: '测试内容' }),
+      json: async () => ({ Response: { Result: '测试内容' } }),
     } as any);
 
     await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/transcribe'),
+      'https://asr.tencentcloudapi.com',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'X-ASR-Secret-Id': MOCK_CREDENTIALS.secretId,
-          'X-ASR-Secret-Key': MOCK_CREDENTIALS.secretKey,
+          'Content-Type': 'application/json; charset=utf-8',
+          'Host': 'asr.tencentcloudapi.com',
+          'X-TC-Action': 'SentenceRecognition',
+          'X-TC-Version': '2019-06-14',
+          'Authorization': expect.stringContaining('TC3-HMAC-SHA256'),
         }),
         body: expect.stringContaining('AAAABASE64AUDIO=='),
       })
@@ -64,7 +66,7 @@ describe('transcribeAudio', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 401,
-      json: async () => ({ error: 'Unauthorized' }),
+      json: async () => ({}),
     } as any);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
@@ -79,7 +81,7 @@ describe('transcribeAudio', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 403,
-      json: async () => ({ error: 'Forbidden' }),
+      json: async () => ({}),
     } as any);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
@@ -94,7 +96,7 @@ describe('transcribeAudio', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 429,
-      json: async () => ({ error: 'Rate limited' }),
+      json: async () => ({}),
     } as any);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
@@ -136,7 +138,7 @@ describe('transcribeAudio', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ text: '' }),
+      json: async () => ({ Response: { Result: '' } }),
     } as any);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
@@ -147,11 +149,47 @@ describe('transcribeAudio', () => {
     }
   });
 
-  it('returns Err with invalid_response when server returns error field', async () => {
+  it('returns Err with auth kind on Tencent AuthFailure response', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ error: 'ASR internal error' }),
+      json: async () => ({
+        Response: { Error: { Code: 'AuthFailure.InvalidSecretId', Message: 'Invalid SecretId' } },
+      }),
+    } as any);
+
+    const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('auth');
+    }
+  });
+
+  it('returns Err with rate_limit kind on Tencent RequestLimitExceeded response', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        Response: { Error: { Code: 'RequestLimitExceeded', Message: 'Too many requests' } },
+      }),
+    } as any);
+
+    const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('rate_limit');
+    }
+  });
+
+  it('returns Err with invalid_response on Tencent API error', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        Response: { Error: { Code: 'InternalError', Message: 'ASR internal error' } },
+      }),
     } as any);
 
     const result = await transcribeAudio(MOCK_URI, MOCK_CREDENTIALS);
