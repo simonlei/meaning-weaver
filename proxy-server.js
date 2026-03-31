@@ -184,12 +184,9 @@ app.post('/api/transcribe', async (req, res) => {
 });
 
 const PORT = 3001;
-// TODO-005: Bind to 127.0.0.1 (loopback only) instead of 0.0.0.0 for security.
-// Android emulators can still reach this server via:
-//   adb reverse tcp:3001 tcp:3001
-// which tunnels the emulator's localhost:3001 to the host's localhost:3001,
-// removing any need to expose the proxy on all network interfaces.
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Hunyuan proxy running on http://127.0.0.1:${PORT}`);
-  console.log(`Tencent ASR proxy available at http://127.0.0.1:${PORT}/api/transcribe`);
+// Bind to 0.0.0.0 so that native devices on the same LAN can reach the proxy.
+// In production, use a proper backend instead of this dev proxy.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Hunyuan proxy running on http://0.0.0.0:${PORT}`);
+  console.log(`Tencent ASR proxy available at http://0.0.0.0:${PORT}/api/transcribe`);
 });

@@ -5,6 +5,7 @@
  */
 import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { Result, Ok, Err } from '../../lib/result';
 import { AIError } from '../ai/client';
 
@@ -17,9 +18,15 @@ function getAsrProxyUrl(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return `${window.location.protocol}//${window.location.hostname}:3001/api/transcribe`;
   }
-  // On native (Android/iOS), use the proxy server IP.
-  // During Expo Go / dev, this is the same dev machine.
+  // On native (Android/iOS), derive the dev machine IP from Expo's debuggerHost
+  // (e.g. "192.168.1.100:8081") so the device can reach the proxy server.
   // In production builds, a real backend URL should be used.
+  const debuggerHost = Constants.expoGoConfig?.debuggerHost
+    ?? Constants.expoConfig?.hostUri;
+  if (debuggerHost) {
+    const hostname = debuggerHost.split(':')[0];
+    return `http://${hostname}:3001/api/transcribe`;
+  }
   return 'http://localhost:3001/api/transcribe';
 }
 
