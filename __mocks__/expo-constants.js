@@ -1,0 +1,7 @@
+module.exports = {
+  default: {
+    expoConfig: {
+      version: '0.0.6',
+    },
+  },
+};

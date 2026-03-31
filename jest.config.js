@@ -21,6 +21,7 @@ module.exports = {
     '^expo-sqlite$': '<rootDir>/__mocks__/expo-sqlite.js',
     '^expo-audio$': '<rootDir>/__mocks__/expo-audio.js',
     '^react-native$': '<rootDir>/__mocks__/react-native.js',
+    '^expo-constants$': '<rootDir>/__mocks__/expo-constants.js',
     '^expo/src/winter/(.*)$': '<rootDir>/__mocks__/expo-winter-runtime.js',
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
