@@ -1,10 +1,11 @@
 import 'react-native-get-random-values';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Slot } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
-import { Text, View } from 'react-native';
+import { Alert, Linking, Text, View } from 'react-native';
 import { useDatabase } from '../src/hooks/useDatabase';
+import { checkForUpdate } from '../src/services/update/updateService';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,24 @@ function DatabaseGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    checkForUpdate().then((result) => {
+      if (!result.ok) return;
+      const { version, downloadUrl } = result.value;
+      Alert.alert(
+        '发现新版本',
+        `新版本 v${version} 已发布，是否立即更新？`,
+        [
+          { text: '稍后', style: 'cancel' },
+          {
+            text: '立即更新',
+            onPress: () => Linking.openURL(downloadUrl),
+          },
+        ]
+      );
+    });
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <StatusBar style="dark" />

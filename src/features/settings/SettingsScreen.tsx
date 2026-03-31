@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useApiKey, useSaveApiKey, useAsrCredentials, useSaveAsrCredentials } from '../../hooks/useSettings';
+import Constants from 'expo-constants';
 
 export function maskApiKey(key: string): string {
   if (key.length <= 6) return '***';
@@ -232,6 +233,13 @@ export function SettingsScreen() {
       <View style={styles.notice}>
         <Text style={styles.noticeText}>
           🎙 语音录音将发送至腾讯云服务器进行转录，转录完成后服务器不保留音频。原始录音仅存储在您的设备本地。
+        </Text>
+      </View>
+
+      {/* 版本信息 */}
+      <View style={[styles.section, { alignItems: 'center' }]}>
+        <Text style={styles.sectionDesc}>
+          当前版本：v{Constants.expoConfig?.version ?? '未知'}
         </Text>
       </View>
     </ScrollView>
