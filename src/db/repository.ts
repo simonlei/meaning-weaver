@@ -6,7 +6,7 @@ import { File, Paths } from 'expo-file-system';
 // Abstract interface - works on both web (memory) and native (SQLite)
 export interface Repository {
   // Fragments
-  insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment>;
+  insertFragment(content: string, photoUri?: string, photoDescription?: string): Promise<Fragment>;
   getRecentFragments(limit: number): Promise<Fragment[]>;
   getFragmentsByWeek(weekKey: string): Promise<Fragment[]>;
   getCurrentWeekFragments(): Promise<Fragment[]>;
@@ -20,8 +20,6 @@ export interface Repository {
   // Settings
   getApiKey(): Promise<string | null>;
   setApiKey(key: string | null): Promise<void>;
-  getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null>;
-  setAsrCredentials(secretId: string, secretKey: string): Promise<void>;
 }
 
 // ===== localStorage-backed implementation (Web) =====
@@ -55,7 +53,7 @@ export class WebRepository implements Repository {
     localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(this.reports));
   }
 
-  async insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string, photoDescription?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
@@ -64,7 +62,6 @@ export class WebRepository implements Repository {
       week_key: computeWeekKey(now),
       photo_uri: photoUri ?? null,
       photo_description: photoDescription ?? null,
-      audio_uri: audioUri ?? null,
     };
     this.fragments.unshift(fragment);
     this.saveFragments();
@@ -138,23 +135,6 @@ export class WebRepository implements Repository {
       localStorage.setItem(STORAGE_KEY_API_KEY, key);
     }
   }
-
-  async getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null> {
-    const secretId = localStorage.getItem('mw_asr_secret_id');
-    const secretKey = localStorage.getItem('mw_asr_secret_key');
-    if (!secretId || !secretKey) return null;
-    return { secretId, secretKey };
-  }
-
-  async setAsrCredentials(secretId: string, secretKey: string): Promise<void> {
-    if (!secretId || !secretKey) {
-      localStorage.removeItem('mw_asr_secret_id');
-      localStorage.removeItem('mw_asr_secret_key');
-    } else {
-      localStorage.setItem('mw_asr_secret_id', secretId);
-      localStorage.setItem('mw_asr_secret_key', secretKey);
-    }
-  }
 }
 
 // ===== URI safety helper (native only) =====
@@ -175,7 +155,7 @@ export class SQLiteRepository implements Repository {
     this.db = db;
   }
 
-  async insertFragment(content: string, photoUri?: string, photoDescription?: string, audioUri?: string): Promise<Fragment> {
+  async insertFragment(content: string, photoUri?: string, photoDescription?: string): Promise<Fragment> {
     const now = Date.now();
     const fragment: Fragment = {
       id: uuidv4(),
@@ -184,11 +164,10 @@ export class SQLiteRepository implements Repository {
       week_key: computeWeekKey(now),
       photo_uri: photoUri ?? null,
       photo_description: photoDescription ?? null,
-      audio_uri: audioUri ?? null,
     };
     await this.db.runAsync(
-      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri, photo_description, audio_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri, fragment.photo_description, fragment.audio_uri]
+      'INSERT INTO fragments (id, content, created_at, week_key, photo_uri, photo_description) VALUES (?, ?, ?, ?, ?, ?)',
+      [fragment.id, fragment.content, fragment.created_at, fragment.week_key, fragment.photo_uri, fragment.photo_description]
     );
     return fragment;
   }
@@ -212,9 +191,9 @@ export class SQLiteRepository implements Repository {
   }
 
   async deleteFragment(id: string): Promise<void> {
-    // Clean up local photo and audio files before deleting the DB row
-    const row = await this.db.getFirstAsync<{ photo_uri: string | null; audio_uri: string | null }>(
-      'SELECT photo_uri, audio_uri FROM fragments WHERE id = ?',
+    // Clean up local photo file before deleting the DB row
+    const row = await this.db.getFirstAsync<{ photo_uri: string | null }>(
+      'SELECT photo_uri FROM fragments WHERE id = ?',
       [id]
     );
     if (row?.photo_uri) {
@@ -226,13 +205,6 @@ export class SQLiteRepository implements Repository {
         } catch {
           // File already gone — ignore
         }
-      }
-    }
-    if (row?.audio_uri) {
-      try {
-        new File(row.audio_uri).delete();
-      } catch {
-        // File already gone — ignore
       }
     }
     await this.db.runAsync('DELETE FROM fragments WHERE id = ?', [id]);
@@ -298,34 +270,6 @@ export class SQLiteRepository implements Repository {
       await this.db.runAsync(
         'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
         ['api_key', key]
-      );
-    }
-  }
-
-  async getAsrCredentials(): Promise<{ secretId: string; secretKey: string } | null> {
-    const sidRow = await this.db.getFirstAsync<{ value: string }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['asr_secret_id']
-    );
-    const keyRow = await this.db.getFirstAsync<{ value: string }>(
-      'SELECT value FROM settings WHERE key = ?',
-      ['asr_secret_key']
-    );
-    if (!sidRow?.value || !keyRow?.value) return null;
-    return { secretId: sidRow.value, secretKey: keyRow.value };
-  }
-
-  async setAsrCredentials(secretId: string, secretKey: string): Promise<void> {
-    if (!secretId || !secretKey) {
-      await this.db.runAsync('DELETE FROM settings WHERE key IN (?, ?)', ['asr_secret_id', 'asr_secret_key']);
-    } else {
-      await this.db.runAsync(
-        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-        ['asr_secret_id', secretId]
-      );
-      await this.db.runAsync(
-        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-        ['asr_secret_key', secretKey]
       );
     }
   }

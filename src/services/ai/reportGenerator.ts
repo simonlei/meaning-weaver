@@ -14,7 +14,6 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
   const safeContent = (f: Fragment) => {
     if (f.content.trim()) return f.content.trim();
     if (f.photo_description) return f.photo_description.slice(0, 80);
-    if (f.audio_uri) return '[语音]';
     if (f.photo_uri) return '[照片]';
     return '[记录]';
   };
@@ -30,7 +29,7 @@ function createFallbackReport(fragments: Fragment[]): ReportContent {
       recurring_themes: [
         {
           theme: '记录本身',
-          evidence: [safeContent(fragments[0] ?? { content: '', audio_uri: null, photo_uri: null } as any).slice(0, 50)],
+          evidence: [safeContent(fragments[0] ?? { content: '', photo_uri: null } as any).slice(0, 50)],
           insight: '你选择记录，这本身就是一种关注自己的方式。',
         },
       ],

@@ -39,15 +39,14 @@ export type CreateFragmentInput = {
   content: string;
   photoUri?: string;
   photoDescription?: string;
-  audioUri?: string;
 };
 
 export function useCreateFragment() {
   const { repo } = useDatabase();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ content, photoUri, photoDescription, audioUri }: CreateFragmentInput) =>
-      repo!.insertFragment(content, photoUri, photoDescription, audioUri),
+    mutationFn: ({ content, photoUri, photoDescription }: CreateFragmentInput) =>
+      repo!.insertFragment(content, photoUri, photoDescription),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fragmentKeys.all });
     },

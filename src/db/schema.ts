@@ -7,7 +7,6 @@ export const FragmentSchema = z.object({
   week_key: z.string(),
   photo_uri: z.string().nullable(),
   photo_description: z.string().nullable(),
-  audio_uri: z.string().nullable(),
 });
 export type Fragment = z.infer<typeof FragmentSchema>;
 

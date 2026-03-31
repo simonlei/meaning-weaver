@@ -19,14 +19,10 @@ const mockMutate = jest.fn();
 const mockSaveApiKey = { mutate: mockMutate, isPending: false };
 const mockUseApiKey = jest.fn();
 const mockUseSaveApiKey = jest.fn();
-const mockUseAsrCredentials = jest.fn();
-const mockUseSaveAsrCredentials = jest.fn();
 
 jest.mock('../../../hooks/useSettings', () => ({
   useApiKey: () => mockUseApiKey(),
   useSaveApiKey: () => mockUseSaveApiKey(),
-  useAsrCredentials: () => mockUseAsrCredentials(),
-  useSaveAsrCredentials: () => mockUseSaveAsrCredentials(),
 }));
 
 describe('maskApiKey helper', () => {
@@ -48,8 +44,6 @@ describe('SettingsScreen', () => {
     jest.clearAllMocks();
     mockUseApiKey.mockReturnValue({ data: null, isLoading: false });
     mockUseSaveApiKey.mockReturnValue(mockSaveApiKey);
-    mockUseAsrCredentials.mockReturnValue({ data: null, isLoading: false });
-    mockUseSaveAsrCredentials.mockReturnValue({ mutate: jest.fn(), isPending: false });
   });
 
   it('模块可以被导入', () => {
@@ -69,10 +63,9 @@ describe('SettingsScreen', () => {
   });
 
   it('输入非空 key 后点击保存调用 mutate(key)', () => {
-    const { getByPlaceholderText, getAllByText } = render(<SettingsScreen />);
+    const { getByPlaceholderText, getByText } = render(<SettingsScreen />);
     fireEvent.changeText(getByPlaceholderText('输入混元 API Key'), 'new-api-key-value');
-    // Two '保存' buttons exist (API key + ASR); press the first one
-    fireEvent.press(getAllByText('保存')[0]);
+    fireEvent.press(getByText('保存'));
     expect(mockMutate).toHaveBeenCalledWith('new-api-key-value', expect.any(Object));
   });
 
