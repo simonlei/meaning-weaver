@@ -5,7 +5,6 @@ export const settingsKeys = {
   // Used for bulk-invalidating all settings queries (e.g., when adding theme/language settings in the future)
   all: ['settings'] as const,
   apiKey: () => ['settings', 'apiKey'] as const,
-  asrCredentials: () => ['settings', 'asrCredentials'] as const,
 };
 
 export function useApiKey() {
@@ -23,24 +22,5 @@ export function useSaveApiKey() {
   return useMutation({
     mutationFn: (key: string | null) => repo!.setApiKey(key),
     onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.apiKey() }),
-  });
-}
-
-export function useAsrCredentials() {
-  const { repo } = useDatabase();
-  return useQuery({
-    queryKey: settingsKeys.asrCredentials(),
-    queryFn: () => repo!.getAsrCredentials(),
-    enabled: !!repo,
-  });
-}
-
-export function useSaveAsrCredentials() {
-  const { repo } = useDatabase();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ secretId, secretKey }: { secretId: string; secretKey: string }) =>
-      repo!.setAsrCredentials(secretId, secretKey),
-    onSuccess: () => qc.invalidateQueries({ queryKey: settingsKeys.asrCredentials() }),
   });
 }

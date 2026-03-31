@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Meaning Weaver is an AI-powered mobile journaling app (React Native + Expo, TypeScript). Users record brief life fragments (text, voice, photos) throughout the week, and an AI system generates weekly insight reports. Philosophy: "Not a diary app, but a mirror helping you see yourself."
+Meaning Weaver is an AI-powered mobile journaling app (React Native + Expo, TypeScript). Users record brief life fragments (text, photos) throughout the week, and an AI system generates weekly insight reports. Philosophy: "Not a diary app, but a mirror helping you see yourself."
 
 ## Commands
 
@@ -15,7 +15,7 @@ npm run ios            # Build + run on iOS
 npm run web            # Web dev server (localhost:19006)
 npm test               # Jest tests (--passWithNoTests)
 npm run lint           # ESLint TypeScript files
-node proxy-server.js   # CORS proxy + ASR signing server (needed for web dev & voice features)
+node proxy-server.js   # CORS proxy (needed for web dev)
 ```
 
 Run a single test file:
@@ -34,23 +34,22 @@ Release via CI: push a git tag `v*` to trigger `.github/workflows/release-apk.ym
 ## Architecture
 
 ### Data Flow
-UI Screens (expo-router tabs) → React Query hooks → Repository pattern → expo-sqlite (native) / localStorage (web) → Tencent Hunyuan API (text/vision) + Tencent ASR (speech-to-text)
+UI Screens (expo-router tabs) → React Query hooks → Repository pattern → expo-sqlite (native) / localStorage (web) → Tencent Hunyuan API (text/vision)
 
 ### Key Layers
 
 - **`app/(tabs)/`** — Expo Router file-system routing. Three tabs: fragments input, reports, settings.
 - **`src/db/schema.ts`** — Zod schemas defining all data models (Fragment, Report, ReportContent). Start here to understand the domain.
 - **`src/db/repository.ts`** — Repository interface with `NativeRepository` (expo-sqlite) and `WebRepository` (localStorage) implementations. SQLite migrations are versioned (currently v5).
-- **`src/hooks/`** — React Query hooks wrapping repository calls (`useFragments`, `useSettings`, `useVoiceRecorder`, `usePhotoDescription`, `useDatabase`).
+- **`src/hooks/`** — React Query hooks wrapping repository calls (`useFragments`, `useSettings`, `usePhotoDescription`, `useDatabase`).
 - **`src/services/ai/`** — Tencent Hunyuan integration: `client.ts` (OpenAI-compatible API), `prompts.ts` (system/user prompts), `reportGenerator.ts` (weekly report generation with fallback), `photoDescriber.ts` (vision model pipeline).
-- **`src/services/asr/`** — Tencent Cloud speech-to-text with TC3-HMAC-SHA256 signing.
-- **`src/lib/result.ts`** — `Result<T, E>` type with `Ok`/`Err` constructors. Used throughout AI/ASR services for type-safe error handling.
-- **`src/components/`** — `FragmentInput` (multi-modal: text/voice/photo) and `FragmentList` (FlashList).
-- **`proxy-server.js`** — Node server that handles CORS for web and signs ASR requests server-side so secrets stay off the client.
+- **`src/lib/result.ts`** — `Result<T, E>` type with `Ok`/`Err` constructors. Used throughout AI services for type-safe error handling.
+- **`src/components/`** — `FragmentInput` (multi-modal: text/photo) and `FragmentList`.
+- **`proxy-server.js`** — Node server that handles CORS for web dev.
 
 ### Key Patterns
 
-- **Result<T, E>** for all AI/ASR service errors — never throw, always return Ok/Err
+- **Result<T, E>** for all AI service errors — never throw, always return Ok/Err
 - **Repository pattern** with abstract interface for multi-platform data access
 - **React Query** for caching/invalidation (`useQuery`/`useMutation` with `queryKey` invalidation)
 - **Zod validation** on all DB entities and AI response parsing (`ReportContentSchema.safeParse()`)
@@ -59,7 +58,7 @@ UI Screens (expo-router tabs) → React Query hooks → Repository pattern → e
 
 ### Database
 
-SQLite with three tables: `fragments` (life moments with optional photo/audio), `reports` (AI-generated weekly insights as JSON), `settings` (API keys). Week-keyed with ISO format (`2026-W13`).
+SQLite with three tables: `fragments` (life moments with optional photo), `reports` (AI-generated weekly insights as JSON), `settings` (API keys). Week-keyed with ISO format (`2026-W13`).
 
 ## Conventions
 

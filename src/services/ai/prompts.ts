@@ -124,9 +124,6 @@ export function buildUserPrompt(
         // Cap length and strip bracket chars to prevent prompt structure injection.
         const safeDesc = f.photo_description.slice(0, 500).replace(/[\[\]]/g, '');
         prompt += `- [图片描述：${safeDesc}]\n`;
-      } else if (f.audio_uri) {
-        // Voice fragment with no transcription text — include as placeholder
-        prompt += `- （语音记录）\n`;
       }
     }
     prompt += '\n';
