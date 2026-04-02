@@ -9,7 +9,7 @@ module.exports = {
       {
         configFile: false,
         presets: [
-          ['D:/work/meaning-weaver/node_modules/expo/internal/babel-preset.js', { lazyImports: false }],
+          [require.resolve('expo/internal/babel-preset'), { lazyImports: false }],
         ],
       },
     ],
